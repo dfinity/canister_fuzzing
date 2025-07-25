@@ -3,6 +3,8 @@ name = "trap_after_await"
 version.workspace = true
 edition.workspace = true
 
+build = "build.rs"
+
 [[bin]]
 name = "trap_after_await"
 path = "src/trap_after_await.rs"
@@ -13,11 +15,8 @@ path = "src/trap_after_await_test_input.rs"
 
 [dependencies]
 ic-state-machine-tests = { workspace = true }
+ic-base-types = { workspace = true }
 ic-types = { workspace = true }
-ic-config = { workspace = true }
-ic-registry-proto-data-provider = { workspace = true }
-ic-registry-routing-table = { workspace = true }
-ic-registry-subnet-type = { workspace = true }
 candid = { workspace = true }
 slog = { workspace = true }
 libafl = { workspace = true }

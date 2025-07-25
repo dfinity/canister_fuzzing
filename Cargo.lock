@@ -8265,10 +8265,7 @@ name = "trap_after_await"
 version = "0.1.0"
 dependencies = [
  "candid",
- "ic-config",
- "ic-registry-proto-data-provider",
- "ic-registry-routing-table",
- "ic-registry-subnet-type",
+ "ic-base-types",
  "ic-state-machine-tests",
  "ic-types",
  "libafl",

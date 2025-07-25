@@ -1,22 +1,13 @@
 use candid::{Decode, Encode};
-use ic_config::{execution_environment::Config as HypervisorConfig, subnet_config::SubnetConfig};
-use ic_registry_proto_data_provider::ProtoRegistryDataProvider;
-use ic_registry_routing_table::{CanisterIdRange, RoutingTable, CANISTER_IDS_PER_SUBNET};
-use ic_registry_subnet_type::SubnetType;
-use ic_state_machine_tests::{
-    finalize_registry, PrincipalId, StateMachineBuilder, StateMachineConfig,
-};
-use ic_types::{ingress::WasmResult, CanisterId, Cycles};
-use slog::Level;
-use std::collections::BTreeMap;
+use ic_base_types::PrincipalId;
+use ic_state_machine_tests::two_subnets_simple;
+use ic_types::ingress::WasmResult;
+use ic_types::Cycles;
+use sandbox_shim::sandbox_main;
 use std::fs::File;
 use std::io::Read;
-use std::sync::Arc;
-use std::sync::RwLock;
-use sandbox_shim::sandbox_main;
 
 const SYNCHRONOUS_EXECUTION: bool = false;
-
 
 fn main() {
     sandbox_main(run);
@@ -30,8 +21,8 @@ fn bytes_to_u64(bytes: &[u8]) -> u64 {
     result
 }
 
-fn read_main_canister_bytes() -> Vec<u8> {
-    let wasm_path = std::path::PathBuf::from(std::env::var("FUZZ_CANISTER_WASM_PATH").unwrap());
+fn read_transfer_canister_bytes() -> Vec<u8> {
+    let wasm_path = std::path::PathBuf::from(std::env::var("TRANSFER_WASM_PATH").unwrap());
     let mut f = File::open(wasm_path).unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).unwrap();
@@ -47,40 +38,7 @@ fn read_ledger_canister_bytes() -> Vec<u8> {
 }
 
 fn run() {
-    let subnets = Arc::new(RwLock::new(BTreeMap::new()));
-    let config = StateMachineConfig::new(
-        SubnetConfig::new(SubnetType::Application),
-        HypervisorConfig::default(),
-    );
-    let registry_data_provider = Arc::new(ProtoRegistryDataProvider::new());
-
-    let test = StateMachineBuilder::new()
-        .no_dts()
-        .with_log_level(Some(Level::Critical))
-        .with_config(Some(config))
-        .with_subnet_seed([1; 32])
-        .with_registry_data_provider(registry_data_provider.clone())
-        .build_with_subnets(subnets);
-
-    // subnet x registry setup
-    let subnet_id = test.get_subnet_id();
-    let range = CanisterIdRange {
-        start: CanisterId::from_u64(0),
-        end: CanisterId::from_u64(CANISTER_IDS_PER_SUBNET - 1),
-    };
-    let mut routing_table = RoutingTable::new();
-    routing_table.insert(range, subnet_id).unwrap();
-    let subnet_list = vec![subnet_id];
-
-    finalize_registry(
-        subnet_id,
-        routing_table,
-        subnet_list,
-        registry_data_provider,
-    );
-
-    test.reload_registry();
-
+    let (test, _s2) = two_subnets_simple();
     // Install ledger canister
     let ledger_canister_id = test
         .install_canister_with_cycles(
@@ -94,7 +52,7 @@ fn run() {
     // Install main canister
     let main_canister_id = test
         .install_canister_with_cycles(
-            read_main_canister_bytes(),
+            read_transfer_canister_bytes(),
             Encode!(&ledger_canister_id).unwrap(),
             None,
             Cycles::new(u128::MAX / 2),
@@ -136,7 +94,8 @@ fn run() {
     // should never fail
     assert_eq!(b1, b2);
 
-    let bytes = include_bytes!("/ic/rs/canister_fuzzing/trap_after_await/crashes/b9a09e1886048420");
+    // let bytes = include_bytes!("/ic/rs/canister_fuzzing/trap_after_await/crashes/b9a09e1886048420");
+    let bytes = &[0_u8; 32];
     let trap = Encode!(&(bytes_to_u64(bytes) % 500_000)).unwrap();
     println!("Trap {:?}", trap);
     // let trap = 3278_u64;

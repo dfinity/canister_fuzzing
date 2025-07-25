@@ -1,6 +1,7 @@
 use ic_state_machine_tests::{StateMachine, StateMachineBuilder};
 use ic_types::{ingress::WasmResult, CanisterId, Cycles};
 use once_cell::sync::Lazy;
+use sandbox_shim::sandbox_main;
 use std::cell::RefCell;
 use std::fs;
 use std::fs::File;
@@ -8,44 +9,40 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::ptr::addr_of;
 use std::time::Duration;
-use sandbox_shim::sandbox_main;
 
 use libafl::{
     corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
     events::SimpleEventManager,
     executors::{inprocess::InProcessExecutor, ExitKind},
     feedback_or,
-    feedbacks::map::AflMapFeedback,
-    feedbacks::CrashFeedback,
+    feedbacks::{map::AflMapFeedback, CrashFeedback},
     fuzzer::{Fuzzer, StdFuzzer},
     inputs::BytesInput,
-    mutators::scheduled::{havoc_mutations, StdScheduledMutator},
-    observers::map::hitcount_map::HitcountsMapObserver,
-    observers::map::StdMapObserver,
-    observers::value::RefCellValueObserver,
-    prelude::*,
+    mutators::{havoc_mutations, HavocScheduledMutator},
+    observers::{
+        map::{hitcount_map::HitcountsMapObserver, StdMapObserver},
+        value::RefCellValueObserver,
+    },
     schedulers::QueueScheduler,
     stages::mutational::StdMutationalStage,
     state::StdState,
+    Evaluator,
 };
 
-// use libafl::monitors::SimpleMonitor;
-use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
+use libafl::monitors::SimpleMonitor;
+// use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list, HasLen};
 use slog::Level;
 mod decode_map;
 use decode_map::{DecodingMapFeedback, DECODING_MAP_OBSERVER_NAME, MAP};
 
-// TODO: This should be obtained from env
-const EXECUTION_DIR: &str = "/ic/rs/canister_fuzzing/decode_candid_by_instructions";
+const EXECUTION_DIR: &str = "fuzzers/decode_candid_by_instructions";
 static mut TEST: Lazy<RefCell<(StateMachine, CanisterId)>> =
     Lazy::new(|| RefCell::new(create_execution_test()));
 static mut COVERAGE_MAP: &mut [u8] = &mut [0; 65536];
 
-// TODO: The right way to do this would be iclude_bytes! but would require a build.rs
-// since the env var is not set at compile time.
 fn read_canister_bytes() -> Vec<u8> {
-    let wasm_path = std::path::PathBuf::from(std::env::var("FUZZ_CANISTER_WASM_PATH").unwrap());
+    let wasm_path = std::path::PathBuf::from(std::env::var("DECODE_CANDID_WASM_PATH").unwrap());
     let mut f = File::open(wasm_path).unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).unwrap();
@@ -54,7 +51,6 @@ fn read_canister_bytes() -> Vec<u8> {
 
 fn create_execution_test() -> (StateMachine, CanisterId) {
     let test = StateMachineBuilder::new()
-        .no_dts()
         .with_log_level(Some(Level::Critical))
         .build();
 
@@ -72,7 +68,6 @@ fn create_execution_test() -> (StateMachine, CanisterId) {
 fn main() {
     sandbox_main(run);
 }
-
 
 pub fn run() {
     let mut harness = |input: &BytesInput| {
@@ -145,14 +140,14 @@ pub fn run() {
     )
     .unwrap();
 
-    // let mon = SimpleMonitor::new(|s| println!("{s}"));
+    let mon = SimpleMonitor::new(|s| println!("{s}"));
 
-    let ui = TuiUI::with_version(
-        String::from("Decode Candid by Instruction / Input Ratio"),
-        String::from("0.0.1"),
-        false,
-    );
-    let mon = TuiMonitor::new(ui);
+    // let ui = TuiUI::with_version(
+    //     String::from("Decode Candid by Instruction / Input Ratio"),
+    //     String::from("0.0.1"),
+    //     false,
+    // );
+    // let mon = TuiMonitor::new(ui);
 
     let mut mgr = SimpleEventManager::new(mon);
     let scheduler = QueueScheduler::new();
@@ -173,7 +168,12 @@ pub fn run() {
         let mut buffer = Vec::new();
         f.read_to_end(&mut buffer).unwrap();
         fuzzer
-            .evaluate_input(&mut state, &mut executor, &mut mgr, BytesInput::new(buffer))
+            .evaluate_input(
+                &mut state,
+                &mut executor,
+                &mut mgr,
+                &BytesInput::new(buffer),
+            )
             .unwrap();
     }
 
@@ -184,7 +184,7 @@ pub fn run() {
     //     .generate_initial_inputs_forced(&mut fuzzer, &mut executor, &mut generator, &mut mgr, 8)
     //     .expect("Failed to generate the initial corpus");
 
-    let mutator = StdScheduledMutator::new(havoc_mutations());
+    let mutator = HavocScheduledMutator::new(havoc_mutations());
     let mut stages = tuple_list!(StdMutationalStage::new(mutator));
 
     fuzzer

@@ -1,13 +1,5 @@
 [env]
 LMDB_NO_BUILD = "1"
-
-# macOS (Darwin)
-[target.'cfg(target_os = "macos")'.env]
-LMDB_H_PATH = "/opt/homebrew/opt/lmdb/include/lmdb.h"
-LMDB_OVERRIDE = "/opt/homebrew/opt/lmdb/lib/liblmdb.a"
-
-# Linux
-[target.'cfg(target_os = "linux")'.env]
 LMDB_H_PATH = "/usr/include/lmdb.h"
 LMDB_OVERRIDE = "/usr/lib/x86_64-linux-gnu/liblmdb.a"
 

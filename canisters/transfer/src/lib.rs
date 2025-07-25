@@ -94,7 +94,10 @@ async fn refund_balance(trap: u64) {
                 // Multiple branch; byte equality check
                 // Good for coverage guided fuzzers
                 let trap_slice = trap.to_le_bytes();
-                if trap_slice[0] == 206 && trap_slice[1] == 12 && trap_slice[2..8].iter().all(|x| *x == 0) {
+                if trap_slice[0] == 206
+                    && trap_slice[1] == 12
+                    && trap_slice[2..8].iter().all(|x| *x == 0)
+                {
                     panic!("Triggering a trap");
                 }
             }

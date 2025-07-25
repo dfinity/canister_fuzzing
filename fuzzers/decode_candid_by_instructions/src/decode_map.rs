@@ -1,11 +1,14 @@
-use libafl::{executors::ExitKind, observers::value::RefCellValueObserver, prelude::*};
+use libafl::feedbacks::{Feedback, StateInitializer};
+use libafl::state::HasExecutions;
+use libafl::{executors::ExitKind, observers::value::RefCellValueObserver};
+use libafl::{Error, HasNamedMetadata};
 use serde::Deserialize;
 use serde::Serialize;
 use std::borrow::Cow;
 use std::cell::RefCell;
 
-use libafl_bolts::tuples::Handle;
 use libafl_bolts::tuples::MatchNameRef;
+use libafl_bolts::tuples::{Handle, MatchName};
 use libafl_bolts::Named;
 
 // Struct to store the fuzzing output
@@ -54,24 +57,37 @@ impl Named for DecodingMapFeedback<'_> {
     }
 }
 
-impl<S> Feedback<S> for DecodingMapFeedback<'_>
+impl<S> StateInitializer<S> for DecodingMapFeedback<'_> {
+    fn init_state(&mut self, _state: &mut S) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+impl<EM, I, OT, S> Feedback<EM, I, OT, S> for DecodingMapFeedback<'_>
 where
-    S: State,
+    S: HasNamedMetadata + HasExecutions,
+    OT: MatchName,
 {
     #[allow(clippy::wrong_self_convention)]
-    fn is_interesting<EM, OT>(
+    fn is_interesting(
         &mut self,
         _state: &mut S,
         _manager: &mut EM,
-        _input: &S::Input,
+        _input: &I,
         observers: &OT,
         _exit_kind: &ExitKind,
-    ) -> Result<bool, Error>
-    where
-        EM: EventFirer<State = S>,
-        OT: ObserversTuple<S>,
-    {
+    ) -> Result<bool, Error> {
         let observer: &DecodingMapObserver = observers.get(&self.handle).unwrap();
         Ok(observer.get_ref().increased)
+    }
+
+    fn append_metadata(
+        &mut self,
+        _state: &mut S,
+        _manager: &mut EM,
+        _observers: &OT,
+        _testcase: &mut libafl::corpus::Testcase<I>,
+    ) -> Result<(), Error> {
+        Ok(())
     }
 }

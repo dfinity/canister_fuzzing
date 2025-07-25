@@ -1,12 +1,12 @@
 use ic_state_machine_tests::StateMachineBuilder;
 use ic_types::{ingress::WasmResult, Cycles};
+use sandbox_shim::sandbox_main;
 use slog::Level;
 use std::fs::File;
 use std::io::Read;
-use sandbox_shim::sandbox_main;
 
 fn read_canister_bytes() -> Vec<u8> {
-    let wasm_path = std::path::PathBuf::from(std::env::var("FUZZ_CANISTER_WASM_PATH").unwrap());
+    let wasm_path = std::path::PathBuf::from(std::env::var("DECODE_CANDID_WASM_PATH").unwrap());
     let mut f = File::open(wasm_path).unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).unwrap();
@@ -16,7 +16,6 @@ fn read_canister_bytes() -> Vec<u8> {
 fn main() {
     sandbox_main(run);
 }
-
 
 fn run() {
     let test = StateMachineBuilder::new()
@@ -31,7 +30,7 @@ fn run() {
             Cycles::new(5_000_000_000_000),
         )
         .unwrap();
-    
+
     let bytes = [0_u8; 32];
     // let bytes = include_bytes!(
     //     "/ic/rs/canister_fuzzing/decode_candid_by_instructions/crashes/adcd18db92297366"
