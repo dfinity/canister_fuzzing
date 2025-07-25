@@ -1,0 +1,30 @@
+[env]
+LMDB_NO_BUILD = "1"
+
+# macOS (Darwin)
+[target.'cfg(target_os = "macos")'.env]
+LMDB_H_PATH = "/opt/homebrew/opt/lmdb/include/lmdb.h"
+LMDB_OVERRIDE = "/opt/homebrew/opt/lmdb/lib/liblmdb.a"
+
+# Linux
+[target.'cfg(target_os = "linux")'.env]
+LMDB_H_PATH = "/usr/include/lmdb.h"
+LMDB_OVERRIDE = "/usr/lib/x86_64-linux-gnu/liblmdb.a"
+
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C",
+    "link-args=-z stack-size=3145728",
+    "-C",
+    "linker-plugin-lto",
+    "-C",
+    "opt-level=3",
+    "-C",
+    "debug-assertions=no",
+    "-C",
+    "debuginfo=0",
+]
+
+[toolchain]
+channel = "stable"
+targets = ["wasm32-unknown-unknown"]

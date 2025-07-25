@@ -1,0 +1,37 @@
+[workspace]
+
+members = [
+    "canisters/decode_candid",
+    "canisters/ledger",
+    "canisters/transfer",
+    "fuzzers/decode_candid_by_instructions",
+    "fuzzers/trap_after_await",
+    "instrumentation",
+    "sandbox_shim",
+]
+
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+ic-config = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
+ic-state-machine-tests = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
+ic-types = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
+ic-registry-proto-data-provider = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
+ic-registry-routing-table = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
+ic-registry-subnet-type = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
+ic-canister-sandbox-backend-lib = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
+
+candid = {version = "0.10.14", features = ["all"] }
+candid_parser = "0.1.4"
+ic-cdk = "0.17.2"
+ic-cdk-macros = "0.17.2"
+ic_principal = "0.1.1"
+serde = "1.0.219"
+slog = "2.7.0"
+libafl = "0.15.3"
+libafl_bolts = "0.15.3"
+once_cell = "1.21.3"

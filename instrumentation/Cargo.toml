@@ -1,0 +1,8 @@
+[package]
+name = "instrumentation"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "instrumentation"
+path = "src/main.rs"

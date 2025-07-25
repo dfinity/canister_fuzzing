@@ -1,0 +1,10 @@
+[package]
+name = "sandbox_shim"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+ic-canister-sandbox-backend-lib = { workspace =  true }

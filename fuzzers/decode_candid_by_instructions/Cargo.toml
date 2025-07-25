@@ -1,0 +1,22 @@
+[package]
+name = "decode_candid_by_instructions"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "decode_candid_by_instructions"
+path = "src/decode_candid_by_instructions.rs"
+
+[[bin]]
+name = "decode_candid_by_instructions_test_input"
+path = "src/decode_candid_by_instructions_test_input.rs"
+
+[dependencies]
+ic-state-machine-tests = { workspace = true }
+ic-types = { workspace = true }
+slog = { workspace = true }
+libafl = { workspace = true }
+libafl_bolts = { workspace = true }
+once_cell = { workspace = true }
+serde = { workspace = true }
+sandbox_shim = { path = "../../sandbox_shim/"}

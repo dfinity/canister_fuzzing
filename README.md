@@ -1,0 +1,1 @@
+brew install lmdb boost openssl libjson-rpc-cpp python3 google-sparsehash cmake
