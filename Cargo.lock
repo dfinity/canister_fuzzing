@@ -5015,6 +5015,12 @@ dependencies = [
 [[package]]
 name = "instrumentation"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ic-wasm-transform",
+ "rand 0.8.5",
+ "wasmparser 0.228.0",
+]
 
 [[package]]
 name = "io-uring"

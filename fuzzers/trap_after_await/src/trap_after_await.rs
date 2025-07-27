@@ -1,3 +1,4 @@
+#[allow(static_mut_refs)]
 use candid::{Decode, Encode};
 use ic_base_types::PrincipalId;
 use ic_state_machine_tests::{two_subnets_simple, StateMachine};
@@ -200,14 +201,16 @@ pub fn run() {
 
         // can fail
         if b1 != b2 {
-            println!("Results fail b1 : {}, b2 : {}", b1, b2);
+            println!("Results fail b1 : {b1}, b2 : {b2}");
             return ExitKind::Crash;
         }
 
         // Report coverage
         let result = test.query(main_canister_id, "export_coverage", vec![]);
         if let Ok(WasmResult::Reply(result)) = result {
-            unsafe { COVERAGE_MAP.copy_from_slice(&result) };
+            unsafe {
+                COVERAGE_MAP.copy_from_slice(&result);
+            };
         }
 
         test.advance_time(Duration::from_secs(1));
@@ -223,8 +226,8 @@ pub fn run() {
 
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
-        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{}/input", EXECUTION_DIR))).unwrap(),
-        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{}/crashes", EXECUTION_DIR))).unwrap(),
+        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{EXECUTION_DIR}/input"))).unwrap(),
+        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{EXECUTION_DIR}/crashes"))).unwrap(),
         &mut feedback,
         &mut objective,
     )
@@ -253,7 +256,7 @@ pub fn run() {
     .expect("Failed to create the Executor");
 
     // bazel run @candid//:didc random -- -t '(nat64)' | bazel run @candid//:didc encode | xxd -r -p
-    let paths = fs::read_dir(PathBuf::from(format!("{}/corpus", EXECUTION_DIR))).unwrap();
+    let paths = fs::read_dir(PathBuf::from(format!("{EXECUTION_DIR}/corpus"))).unwrap();
     for path in paths {
         let mut f = File::open(path.unwrap().path()).unwrap();
         let mut buffer = Vec::new();

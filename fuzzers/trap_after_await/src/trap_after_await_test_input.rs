@@ -95,10 +95,11 @@ fn run() {
     assert_eq!(b1, b2);
 
     // let bytes = include_bytes!("/ic/rs/canister_fuzzing/trap_after_await/crashes/b9a09e1886048420");
-    let bytes = &[0_u8; 32];
-    let trap = Encode!(&(bytes_to_u64(bytes) % 500_000)).unwrap();
-    println!("Trap {:?}", trap);
+    // let bytes = &[0_u8; 32];
+    // let trap = Encode!(&(bytes_to_u64(bytes) % 500_000)).unwrap();
+    // println!("Trap {trap:?}");
     // let trap = 3278_u64;
+    let trap = Encode!(&(3278)).unwrap();
 
     if SYNCHRONOUS_EXECUTION {
         // Synchronous message execution - ABABAB
@@ -153,7 +154,7 @@ fn run() {
 
     // can fail
     if b1 != b2 {
-        println!("Results fail b1 : {}, b2 : {}", b1, b2);
+        println!("Results fail b1 : {b1}, b2 : {b2}");
         panic!("Ledger balance doesn't match");
     }
 }

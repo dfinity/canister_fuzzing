@@ -21,6 +21,7 @@ ic-state-machine-tests = { git = "https://github.com/dfinity/ic", rev = "9d91ef3
 ic-types = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
 ic-base-types = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
 ic-canister-sandbox-backend-lib = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
+ic-wasm-transform = { git = "https://github.com/dfinity/ic", rev = "9d91ef35dda7c40c0b8eb993ce1f5ca1f9d06c63"}
 
 candid = {version = "0.10.14", features = ["all"] }
 candid_parser = "0.1.4"
@@ -32,3 +33,6 @@ slog = "2.7.0"
 libafl = { version = "0.15.3", features = ["std"] }
 libafl_bolts = "0.15.3"
 once_cell = "1.21.3"
+wasmparser = "0.228.0"
+rand = "0.8.5"
+anyhow = "1.0.75"
