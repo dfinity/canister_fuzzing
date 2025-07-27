@@ -46,14 +46,14 @@ fn run() {
         }
         Ok(WasmResult::Reject(message)) => {
             if message.contains("Canister trapped") {
-                println!("{}", message);
+                println!("{message}");
             }
             0
         }
         _ => 0,
     };
 
-    println!("Instructions used {}", instructions);
+    println!("Instructions used {instructions}");
     println!("Input length {}", bytes.len());
     let threshold = instructions / bytes.len() as u64;
     println!(

@@ -1,9 +1,9 @@
-#[allow(static_mut_refs)]
 use candid::{Decode, Encode};
 use ic_base_types::PrincipalId;
 use ic_state_machine_tests::{two_subnets_simple, StateMachine};
 use ic_types::Cycles;
 use ic_types::{ingress::WasmResult, CanisterId};
+use libafl::inputs::ValueInput;
 use once_cell::sync::Lazy;
 use sandbox_shim::sandbox_main;
 use std::cell::RefCell;
@@ -33,6 +33,7 @@ use libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
+#[allow(dead_code)]
 fn bytes_to_u64(bytes: &[u8]) -> u64 {
     let mut result = 0u64;
     for &byte in bytes.iter().take(8).rev() {
@@ -102,6 +103,7 @@ fn create_execution_test() -> State {
     }
 }
 
+#[allow(static_mut_refs)]
 pub fn run() {
     let mut harness = |input: &BytesInput| {
         let ledger_canister_id = unsafe { TEST.borrow().ledger_canister_id };
@@ -218,6 +220,11 @@ pub fn run() {
         ExitKind::Ok
     };
 
+    // The harness is too slow
+    // Initialization of state is done this way.
+    let start = harness(&ValueInput::<Vec<u8>>::default());
+    println!("Initialized state: {start:?}");
+
     let hitcount_map_observer =
         HitcountsMapObserver::new(unsafe { StdMapObserver::new("coverage_map", COVERAGE_MAP) });
     let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
@@ -258,7 +265,8 @@ pub fn run() {
     // bazel run @candid//:didc random -- -t '(nat64)' | bazel run @candid//:didc encode | xxd -r -p
     let paths = fs::read_dir(PathBuf::from(format!("{EXECUTION_DIR}/corpus"))).unwrap();
     for path in paths {
-        let mut f = File::open(path.unwrap().path()).unwrap();
+        let p = path.unwrap().path();
+        let mut f = File::open(p.clone()).unwrap();
         let mut buffer = Vec::new();
         f.read_to_end(&mut buffer).unwrap();
         fuzzer
@@ -273,7 +281,6 @@ pub fn run() {
 
     let mutator = HavocScheduledMutator::new(havoc_mutations());
     let mut stages = tuple_list!(StdMutationalStage::new(mutator));
-
     fuzzer
         .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
         .expect("Error in the fuzzing loop");

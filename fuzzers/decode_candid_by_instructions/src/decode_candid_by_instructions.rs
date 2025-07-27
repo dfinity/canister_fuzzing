@@ -69,6 +69,7 @@ fn main() {
     sandbox_main(run);
 }
 
+#[allow(static_mut_refs)]
 pub fn run() {
     let mut harness = |input: &BytesInput| {
         let canister_id = unsafe { TEST.borrow().1 };
@@ -133,8 +134,8 @@ pub fn run() {
 
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
-        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{}/input", EXECUTION_DIR))).unwrap(),
-        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{}/crashes", EXECUTION_DIR))).unwrap(),
+        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{EXECUTION_DIR}/input"))).unwrap(),
+        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{EXECUTION_DIR}/crashes"))).unwrap(),
         &mut feedback,
         &mut objective,
     )
@@ -162,7 +163,7 @@ pub fn run() {
     )
     .expect("Failed to create the Executor");
 
-    let paths = fs::read_dir(PathBuf::from(format!("{}/corpus", EXECUTION_DIR))).unwrap();
+    let paths = fs::read_dir(PathBuf::from(format!("{EXECUTION_DIR}/corpus"))).unwrap();
     for path in paths {
         let mut f = File::open(path.unwrap().path()).unwrap();
         let mut buffer = Vec::new();

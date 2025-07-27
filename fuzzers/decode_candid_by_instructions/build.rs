@@ -89,7 +89,6 @@ fn get_target_dir() -> PathBuf {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     // Navigate up to the workspace root
     let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
-    let wasm_target_dir = workspace_root.join("target/wasm32-unknown-unknown/release");
 
-    wasm_target_dir
+    workspace_root.join("target/wasm32-unknown-unknown/release")
 }

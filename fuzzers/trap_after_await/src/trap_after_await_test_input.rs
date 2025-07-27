@@ -13,6 +13,7 @@ fn main() {
     sandbox_main(run);
 }
 
+#[allow(dead_code)]
 fn bytes_to_u64(bytes: &[u8]) -> u64 {
     let mut result = 0u64;
     for &byte in bytes.iter().take(8).rev() {
@@ -95,11 +96,11 @@ fn run() {
     assert_eq!(b1, b2);
 
     // let bytes = include_bytes!("/ic/rs/canister_fuzzing/trap_after_await/crashes/b9a09e1886048420");
-    // let bytes = &[0_u8; 32];
     // let trap = Encode!(&(bytes_to_u64(bytes) % 500_000)).unwrap();
     // println!("Trap {trap:?}");
+
     // let trap = 3278_u64;
-    let trap = Encode!(&(3278)).unwrap();
+    let trap = Encode!(&(32_u64)).unwrap();
 
     if SYNCHRONOUS_EXECUTION {
         // Synchronous message execution - ABABAB

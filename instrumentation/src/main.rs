@@ -19,7 +19,7 @@ fn main() -> Result<()> {
     let output_path = &args[2];
 
     let wasm_bytes = fs::read(input_path)?;
-    println!("Successfully read Wasm file: {}", input_path);
+    println!("Successfully read Wasm file: {input_path}");
 
     let mut module =
         Module::parse(&wasm_bytes, false).expect("Failed to parse module with ic-wasm-transform");
@@ -35,7 +35,7 @@ fn main() -> Result<()> {
 
     validate_wasm(&instrumented_wasm)?;
     fs::write(output_path, instrumented_wasm)?;
-    println!("Validation successful. Output written to: {}", output_path);
+    println!("Validation successful. Output written to: {output_path}");
 
     Ok(())
 }
@@ -43,8 +43,7 @@ fn main() -> Result<()> {
 fn instrument_for_afl(module: &mut Module<'_>) -> Result<()> {
     let (afl_prev_loc_idx, afl_mem_ptr_idx) = inject_globals(module);
     println!(
-        "  -> Injected globals: prev_loc @ index {}, mem_ptr @ index {}",
-        afl_prev_loc_idx, afl_mem_ptr_idx
+        "  -> Injected globals: prev_loc @ index {afl_prev_loc_idx}, mem_ptr @ index {afl_mem_ptr_idx}"
     );
 
     inject_afl_coverage_export(module, afl_mem_ptr_idx)?;
@@ -133,10 +132,10 @@ fn instrument_branches(module: &mut Module<'_>, afl_prev_loc_idx: u32, afl_mem_p
             {
                 func_type.params().len() as u32
             } else {
-                panic!("Type at index {} is not a function type", type_idx);
+                panic!("Type at index {type_idx} is not a function type");
             }
         } else {
-            panic!("Could not find type for function index {}", func_idx);
+            panic!("Could not find type for function index {func_idx}");
         };
 
         let afl_local_idx = add_i32_local(body, num_params);
