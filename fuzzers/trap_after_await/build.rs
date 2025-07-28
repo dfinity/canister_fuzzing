@@ -15,14 +15,14 @@ fn main() {
     }
 
     // Set env var for the ledger canister
-    let ledger_wasm_path = get_target_dir().join("ledger_instrumented.wasm");
+    let ledger_wasm_path = get_build_dir().join("ledger_instrumented.wasm");
     println!(
         "cargo:rustc-env=LEDGER_WASM_PATH={}",
         ledger_wasm_path.display()
     );
 
     // Set env var for the transfer canister
-    let transfer_wasm_path = get_target_dir().join("transfer_instrumented.wasm");
+    let transfer_wasm_path = get_build_dir().join("transfer_instrumented.wasm");
     println!(
         "cargo:rustc-env=TRANSFER_WASM_PATH={}",
         transfer_wasm_path.display()
@@ -49,12 +49,12 @@ fn build_canister(name: &str) {
     );
     println!(
         "cargo:rerun-if-changed={}/instrumentation/src/main.rs",
-        manifest_dir.display()
+        workspace_root.display()
     );
 
     println!(
         "cargo:rerun-if-changed={}/instrumentation/Cargo.toml",
-        manifest_dir.display()
+        workspace_root.display()
     );
 
     let cargo_bin = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
@@ -65,6 +65,8 @@ fn build_canister(name: &str) {
         .arg("--target")
         .arg("wasm32-unknown-unknown")
         .arg("--release")
+        .arg("--target-dir")
+        .arg(get_target_dir().display().to_string())
         .status()
         .unwrap_or_else(|_| panic!("Failed to execute cargo build for canister '{name}'"));
 
@@ -72,8 +74,8 @@ fn build_canister(name: &str) {
         panic!("Failed to build canister '{name}'. Exit status: {status}");
     }
 
-    let wasm_path = get_target_dir().join(format!("{name}.wasm"));
-    let wasm_instrumented_path = get_target_dir().join(format!("{name}_instrumented.wasm"));
+    let wasm_path = get_build_dir().join(format!("{name}.wasm"));
+    let wasm_instrumented_path = get_build_dir().join(format!("{name}_instrumented.wasm"));
 
     let status = Command::new(cargo_bin)
         .arg("run")
@@ -82,6 +84,8 @@ fn build_canister(name: &str) {
         .arg("--bin")
         .arg("instrumentation")
         .arg("--release")
+        .arg("--target-dir")
+        .arg(get_target_dir().display().to_string())
         .arg(wasm_path.display().to_string())
         .arg(wasm_instrumented_path.display().to_string())
         .status()
@@ -92,12 +96,12 @@ fn build_canister(name: &str) {
     }
 }
 
-fn get_target_dir() -> PathBuf {
-    // --- Step 3: Set Environment Variables ---
-    // The build script's current directory is the crate's root (e.g., fuzzers/trap_after_await)
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    // Navigate up to the workspace root
-    let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
+fn get_build_dir() -> PathBuf {
+    get_target_dir().join("wasm32-unknown-unknown/release")
+}
 
-    workspace_root.join("target/wasm32-unknown-unknown/release")
+fn get_target_dir() -> PathBuf {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
+    workspace_root.join("target/canister_build")
 }
