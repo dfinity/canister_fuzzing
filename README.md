@@ -26,3 +26,9 @@ sudo apt update && sudo apt install \
         liblmdb-dev \
         liblzma-dev
 ```
+
+
+```
+dfx build cbor_decode --check --help
+
+```
