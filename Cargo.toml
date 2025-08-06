@@ -26,7 +26,7 @@ ic-base-types = { git = "https://github.com/dfinity/ic", rev = "4d88fdf5522ea06d
 ic-canister-sandbox-backend-lib = { git = "https://github.com/dfinity/ic", rev = "4d88fdf5522ea06d606142a91b20ace50c6e3665"}
 ic-wasm-transform = { git = "https://github.com/dfinity/ic", rev = "4d88fdf5522ea06d606142a91b20ace50c6e3665"}
 
-candid = {version = "0.10.14", features = ["all"] }
+candid = { git = "https://github.com/dfinity/candid", rev = "ad5f6eec2df399fa57664ee0971d7d5ead1e8fa8" , features = ["all"] }
 candid_parser = "0.1.4"
 ic-cdk = "0.17.2"
 ic-cdk-macros = "0.17.2"
@@ -41,5 +41,5 @@ rand = "0.8.5"
 anyhow = "1.0.75"
 serde_cbor = "0.11.2"
 serde_bytes = "0.11.17"
-ic-stable-structures = "0.6.9"
+ic-stable-structures = "0.7.0"
 arbitrary = { version = "1.4.1", features = ["derive"] }

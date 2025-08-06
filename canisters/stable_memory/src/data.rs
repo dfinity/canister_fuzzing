@@ -29,6 +29,10 @@ impl Storable for BoundedFuzzStruct {
         value
     }
 
+    fn into_bytes(self) -> Vec<u8> {
+        serde_cbor::ser::to_vec(&self).unwrap()
+    }
+
     const BOUND: Bound = Bound::Bounded {
         max_size: MAX_VALUE_SIZE * 2,
         is_fixed_size: false,
@@ -44,6 +48,10 @@ impl Storable for UnboundedFuzzStruct {
     fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
         let value: Self = serde_cbor::de::from_slice(bytes.as_ref()).unwrap();
         value
+    }
+
+    fn into_bytes(self) -> Vec<u8> {
+        serde_cbor::ser::to_vec(&self).unwrap()
     }
 
     const BOUND: Bound = Bound::Unbounded;

@@ -30,14 +30,12 @@ thread_local! {
         StableMinHeap::init(
             MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(2))),
         )
-        .expect("Unable to init bounded StableMinHeap")
     );
 
     static BOUNDED_VEC: RefCell<StableVec<BoundedFuzzStruct, Memory>> = RefCell::new(
         StableVec::init(
             MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(3))),
         )
-        .expect("Unable to init bounded StableVec")
     );
 }
 
