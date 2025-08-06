@@ -1,0 +1,3 @@
+service : {
+  stable_memory_ops : (blob) -> ();
+}

@@ -1,28 +1,25 @@
 [package]
-name = "decode_candid_by_instructions"
+name = "stable_memory_ops"
 version.workspace = true
 edition.workspace = true
 
 build = "build.rs"
 
 [[bin]]
-name = "decode_candid_by_instructions"
-path = "src/decode_candid_by_instructions.rs"
-
-[[bin]]
-name = "decode_candid_by_instructions_test_input"
-path = "src/decode_candid_by_instructions_test_input.rs"
+name = "stable_memory_ops"
+path = "src/stable_memory_ops.rs"
 
 [dependencies]
 ic-state-machine-tests = { workspace = true }
+ic-base-types = { workspace = true }
 ic-types = { workspace = true }
+candid = { workspace = true }
 slog = { workspace = true }
 libafl = { workspace = true }
 libafl_bolts = { workspace = true }
 once_cell = { workspace = true }
 serde = { workspace = true }
 sandbox_shim = { path = "../../sandbox_shim/"}
-
 
 [build-dependencies]
 build_canister = { path = "../../build_canister/"}
