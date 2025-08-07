@@ -92,6 +92,15 @@ pub fn run() {
         let payload = candid::Encode!(&b, &key, &k).unwrap();
         let result = test.execute_ingress(canister_id, "sign_ecdsa", payload);
 
+        // Update main result here (test for hash)
+        // let bytes: Vec<u8> = (*input).clone().into();
+        // let mut hasher = Sha256::new();
+        // hasher.update(bytes);
+        // let digest = hasher.finalize();
+        // let b = digest.as_slice().to_vec();
+        // let payload = candid::Encode!(&bytes).unwrap();
+        // let result = test.execute_ingress(canister_id, "sign_ecdsa", payload);
+
         let exit_status = match result {
             Ok(WasmResult::Reject(message)) => {
                 // Canister crashing is interesting

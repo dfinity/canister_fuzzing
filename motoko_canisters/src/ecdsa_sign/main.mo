@@ -2,6 +2,8 @@ import ECDSA "mo:ecdsa";
 import Ecdsa "mo:ecdsa";
 import Iter "mo:core/Iter";
 import Debug "mo:base/Debug";
+import Blob "mo:base/Blob";
+import Sha256 "mo:sha2/Sha256";
 
 persistent actor EcdsaSigner {
 
@@ -35,4 +37,10 @@ persistent actor EcdsaSigner {
         };
     };
   };
+
+  public func hash_msg(message: [Nat8]) : async Blob {
+      let hashedMsg = Sha256.fromIter(#sha256, message.vals());
+      return hashedMsg
+  }
+
 }
