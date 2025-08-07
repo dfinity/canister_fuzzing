@@ -1,0 +1,29 @@
+[package]
+name = "motoko_diff"
+version.workspace = true
+edition.workspace = true
+
+build = "build.rs"
+
+[[bin]]
+name = "motoko_diff"
+path = "src/motoko_diff.rs"
+
+[dependencies]
+ic-state-machine-tests = { workspace = true }
+ic-base-types = { workspace = true }
+ic-types = { workspace = true }
+candid = { workspace = true }
+slog = { workspace = true }
+libafl = { workspace = true }
+libafl_bolts = { workspace = true }
+once_cell = { workspace = true }
+serde = { workspace = true }
+getrandom = { workspace = true }
+k256 = { workspace = true }
+sha2 = { workspace = true }
+rand_core = { workspace = true }
+sandbox_shim = { path = "../../sandbox_shim/"}
+
+[build-dependencies]
+build_canister = { path = "../../build_canister/"}

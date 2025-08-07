@@ -11,6 +11,10 @@
     "candid_decode": {
       "main": "src/candid_decode/main.mo",
       "type": "motoko"
+    },
+    "ecdsa_sign": {
+      "main": "src/ecdsa_sign/main.mo",
+      "type": "motoko"
     }
   },
   "defaults": {

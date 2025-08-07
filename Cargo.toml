@@ -9,6 +9,7 @@ members = [
     "fuzzers/trap_after_await",
     "fuzzers/stable_memory_ops",
     "fuzzers/motoko_shim",
+    "fuzzers/motoko_diff",
     "instrumentation",
     "sandbox_shim",
     "build_canister",
@@ -21,11 +22,11 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
-ic-state-machine-tests = { git = "https://github.com/dfinity/ic", rev = "64457111612567254c0d4cc912c412a19eae4502"}
-ic-types = { git = "https://github.com/dfinity/ic", rev = "64457111612567254c0d4cc912c412a19eae4502"}
-ic-base-types = { git = "https://github.com/dfinity/ic", rev = "64457111612567254c0d4cc912c412a19eae4502"}
-ic-canister-sandbox-backend-lib = { git = "https://github.com/dfinity/ic", rev = "64457111612567254c0d4cc912c412a19eae4502"}
-ic-wasm-transform = { git = "https://github.com/dfinity/ic", rev = "64457111612567254c0d4cc912c412a19eae4502"}
+ic-state-machine-tests = { git = "https://github.com/dfinity/ic", rev = "c3f16a62a14444302d96f3afba1e69fde211bcdc"}
+ic-types = { git = "https://github.com/dfinity/ic", rev = "c3f16a62a14444302d96f3afba1e69fde211bcdc"}
+ic-base-types = { git = "https://github.com/dfinity/ic", rev = "c3f16a62a14444302d96f3afba1e69fde211bcdc"}
+ic-canister-sandbox-backend-lib = { git = "https://github.com/dfinity/ic", rev = "c3f16a62a14444302d96f3afba1e69fde211bcdc"}
+ic-wasm-transform = { git = "https://github.com/dfinity/ic", rev = "c3f16a62a14444302d96f3afba1e69fde211bcdc"}
 
 candid = { version = "0.10.14" , features = ["all"] }
 candid_parser = "0.1.4"
@@ -39,8 +40,12 @@ libafl_bolts = "0.15.3"
 once_cell = "1.21.3"
 wasmparser = "0.228.0"
 rand = "0.8.5"
+getrandom = "0.3"
 anyhow = "1.0.75"
 serde_cbor = "0.11.2"
 serde_bytes = "0.11.17"
 ic-stable-structures = "0.7.0"
 arbitrary = { version = "1.4.1", features = ["derive"] }
+k256 = { version = "0.13", features = ["ecdsa-core"] }
+sha2 = "0.10.9"
+rand_core = "0.9.3"

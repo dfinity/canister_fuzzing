@@ -1,4 +1,4 @@
-use candid::{Decode, Encode};
+use candid::{Encode, Decode};
 use ic_state_machine_tests::ErrorCode;
 use ic_state_machine_tests::{StateMachine, StateMachineBuilder};
 use ic_types::{ingress::WasmResult, CanisterId, Cycles};
@@ -26,12 +26,21 @@ use libafl::{
     Evaluator,
 };
 
+use k256::{
+    ecdsa::{hazmat, Signature},
+    Scalar,
+    Secp256k1,
+};
+use k256::elliptic_curve::PrimeField;
+use sha2::{Digest, Sha256};
+
 use libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 use slog::Level;
 
-const EXECUTION_DIR: &str = "fuzzers/motoko_shim";
+
+const EXECUTION_DIR: &str = "fuzzers/motoko_diff";
 static mut TEST: Lazy<RefCell<(StateMachine, CanisterId)>> =
     Lazy::new(|| RefCell::new(create_execution_test()));
 static mut COVERAGE_MAP: &mut [u8] = &mut [0; 65536];
@@ -72,8 +81,16 @@ pub fn run() {
 
         // Update main result here
         let bytes: Vec<u8> = (*input).clone().into();
-        let result = test.execute_ingress(canister_id, "parse_cbor", Encode!(&bytes).unwrap());
-        // println!("{:?} result", result);
+        let mut key = [0u8; 32];
+        getrandom::fill(&mut key).unwrap();
+        let mut k = [0u8; 32];
+        getrandom::fill(&mut k).unwrap();
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        let digest = hasher.finalize();
+        let b = digest.as_slice().to_vec();
+        let payload = candid::Encode!(&b, &key, &k).unwrap();
+        let result = test.execute_ingress(canister_id, "sign_ecdsa", payload);
 
         let exit_status = match result {
             Ok(WasmResult::Reject(message)) => {
@@ -91,7 +108,19 @@ pub fn run() {
                 }
                 _ => ExitKind::Ok,
             },
-            _ => ExitKind::Ok,
+            Ok(WasmResult::Reply(bytes)) => {
+                let result = Decode!(&bytes, Vec<u8>).unwrap();
+                let d = Scalar::from_repr(key.into()).unwrap();
+                let k = Scalar::from_repr(k.into()).unwrap();
+
+                let (signature, _): (Signature, _) = hazmat::sign_prehashed::<Secp256k1, Scalar>(&d, k, &digest).unwrap();
+                let signature_old = Signature::from_der(&result).unwrap();
+                
+                if signature != signature_old {
+                    return ExitKind::Crash;
+                }
+                ExitKind::Ok
+            }
         };
 
         test.advance_time(Duration::from_secs(1));
