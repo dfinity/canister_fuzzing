@@ -1,5 +1,12 @@
+# CANISTER FUZZING
+
+ **Work in progress**
+
+
+## Build dependencies (not exhaustive)
 
 ```sh
+
 rustup default stable
 rustup target add wasm32-unknown-unknown
 
@@ -28,7 +35,7 @@ sudo apt update && sudo apt install \
 ```
 
 
-```
-dfx build cbor_decode --check --help
+## Motoko usage
 
-```
+* Automatically handled via build script. Uses dfx to build the canisters for now.
+* Requires dfx & mops as build dependencies

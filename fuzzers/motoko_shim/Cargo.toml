@@ -1,0 +1,25 @@
+[package]
+name = "motoko_shim"
+version.workspace = true
+edition.workspace = true
+
+build = "build.rs"
+
+[[bin]]
+name = "motoko_shim"
+path = "src/motoko_shim.rs"
+
+[dependencies]
+ic-state-machine-tests = { workspace = true }
+ic-base-types = { workspace = true }
+ic-types = { workspace = true }
+candid = { workspace = true }
+slog = { workspace = true }
+libafl = { workspace = true }
+libafl_bolts = { workspace = true }
+once_cell = { workspace = true }
+serde = { workspace = true }
+sandbox_shim = { path = "../../sandbox_shim/"}
+
+[build-dependencies]
+build_canister = { path = "../../build_canister/"}

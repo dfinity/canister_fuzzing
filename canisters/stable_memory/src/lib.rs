@@ -113,7 +113,7 @@ pub fn stable_memory_ops() {
                     bounded_data.truncate(MAX_VALUE_SIZE as usize);
 
                     BOUNDED_MINHEAP.with_borrow_mut(|stable_minheap| {
-                        let _ = stable_minheap.push(&BoundedFuzzStruct { data: bounded_data });
+                        stable_minheap.push(&BoundedFuzzStruct { data: bounded_data });
                     });
                 }
                 StableStructOperation::MinHeapPop => {
@@ -126,7 +126,7 @@ pub fn stable_memory_ops() {
                     bounded_data.truncate(MAX_VALUE_SIZE as usize);
 
                     BOUNDED_VEC.with_borrow_mut(|stable_vec| {
-                        let _ = stable_vec.push(&BoundedFuzzStruct { data: bounded_data });
+                        stable_vec.push(&BoundedFuzzStruct { data: bounded_data });
                     });
                 }
                 StableStructOperation::VecPop => {

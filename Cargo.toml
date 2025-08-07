@@ -8,6 +8,7 @@ members = [
     "fuzzers/decode_candid_by_instructions",
     "fuzzers/trap_after_await",
     "fuzzers/stable_memory_ops",
+    "fuzzers/motoko_shim",
     "instrumentation",
     "sandbox_shim",
     "build_canister",
@@ -20,13 +21,13 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
-ic-state-machine-tests = { git = "https://github.com/dfinity/ic", rev = "4d88fdf5522ea06d606142a91b20ace50c6e3665"}
-ic-types = { git = "https://github.com/dfinity/ic", rev = "4d88fdf5522ea06d606142a91b20ace50c6e3665"}
-ic-base-types = { git = "https://github.com/dfinity/ic", rev = "4d88fdf5522ea06d606142a91b20ace50c6e3665"}
-ic-canister-sandbox-backend-lib = { git = "https://github.com/dfinity/ic", rev = "4d88fdf5522ea06d606142a91b20ace50c6e3665"}
-ic-wasm-transform = { git = "https://github.com/dfinity/ic", rev = "4d88fdf5522ea06d606142a91b20ace50c6e3665"}
+ic-state-machine-tests = { git = "https://github.com/dfinity/ic", rev = "64457111612567254c0d4cc912c412a19eae4502"}
+ic-types = { git = "https://github.com/dfinity/ic", rev = "64457111612567254c0d4cc912c412a19eae4502"}
+ic-base-types = { git = "https://github.com/dfinity/ic", rev = "64457111612567254c0d4cc912c412a19eae4502"}
+ic-canister-sandbox-backend-lib = { git = "https://github.com/dfinity/ic", rev = "64457111612567254c0d4cc912c412a19eae4502"}
+ic-wasm-transform = { git = "https://github.com/dfinity/ic", rev = "64457111612567254c0d4cc912c412a19eae4502"}
 
-candid = { git = "https://github.com/dfinity/candid", rev = "ad5f6eec2df399fa57664ee0971d7d5ead1e8fa8" , features = ["all"] }
+candid = { version = "0.10.14" , features = ["all"] }
 candid_parser = "0.1.4"
 ic-cdk = "0.17.2"
 ic-cdk-macros = "0.17.2"
