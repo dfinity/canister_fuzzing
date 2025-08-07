@@ -1,4 +1,5 @@
 use candid::Encode;
+use ic_state_machine_tests::ErrorCode;
 use ic_state_machine_tests::{StateMachine, StateMachineBuilder};
 use ic_types::{ingress::WasmResult, CanisterId, Cycles};
 use once_cell::sync::Lazy;
@@ -68,8 +69,12 @@ pub fn run() {
     let mut harness = |input: &BytesInput| {
         let canister_id = unsafe { TEST.borrow().1 };
         let test = unsafe { &mut TEST.borrow_mut().0 };
+
+        // Update main result here
         let bytes: Vec<u8> = (*input).clone().into();
-        let result = test.execute_ingress(canister_id, "parse_protobuf", Encode!(&bytes).unwrap());
+        let result = test.execute_ingress(canister_id, "parse_cbor", Encode!(&bytes).unwrap());
+        // println!("{:?} result", result);
+
         let exit_status = match result {
             Ok(WasmResult::Reject(message)) => {
                 // Canister crashing is interesting
@@ -79,6 +84,10 @@ pub fn run() {
                     ExitKind::Ok
                 }
             }
+            Err(e) => match e.code() {
+                ErrorCode::CanisterCalledTrap | ErrorCode::CanisterTrapped => ExitKind::Crash,
+                _ => ExitKind::Ok,
+            },
             _ => ExitKind::Ok,
         };
 
@@ -131,7 +140,7 @@ pub fn run() {
     )
     .expect("Failed to create the Executor");
 
-    // bazel run @candid//:didc random -- -t '(nat64)' | bazel run @candid//:didc encode | xxd -r -p
+    // bazel run @candid//:didc random -- -d gateway.did -t '(HttpResponse)' | bazel run @candid//:didc encode | xxd -r -p
     let paths = fs::read_dir(PathBuf::from(format!("{EXECUTION_DIR}/corpus"))).unwrap();
     for path in paths {
         let p = path.unwrap().path();

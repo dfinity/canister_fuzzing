@@ -3,6 +3,14 @@
     "cbor_decode": {
       "main": "src/cbor_decode/main.mo",
       "type": "motoko"
+    },
+    "protobuf_decode": {
+      "main": "src/protobuf_decode/main.mo",
+      "type": "motoko"
+    },
+    "candid_decode": {
+      "main": "src/candid_decode/main.mo",
+      "type": "motoko"
     }
   },
   "defaults": {
