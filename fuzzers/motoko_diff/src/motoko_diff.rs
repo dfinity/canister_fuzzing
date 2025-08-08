@@ -1,84 +1,76 @@
 use candid::{Decode, Encode};
 use ic_state_machine_tests::ErrorCode;
 use ic_state_machine_tests::{StateMachine, StateMachineBuilder};
-use ic_types::{ingress::WasmResult, CanisterId, Cycles};
-use once_cell::sync::Lazy;
-use sandbox_shim::sandbox_main;
-use std::cell::RefCell;
-use std::fs;
-use std::fs::File;
-use std::io::Read;
-use std::path::PathBuf;
-use std::time::Duration;
-
-use libafl::{
-    corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
-    events::SimpleEventManager,
-    executors::{inprocess::InProcessExecutor, ExitKind},
-    feedbacks::{map::AflMapFeedback, CrashFeedback},
-    fuzzer::{Fuzzer, StdFuzzer},
-    inputs::BytesInput,
-    mutators::{havoc_mutations, HavocScheduledMutator},
-    observers::map::{hitcount_map::HitcountsMapObserver, StdMapObserver},
-    schedulers::QueueScheduler,
-    stages::mutational::StdMutationalStage,
-    state::StdState,
-    Evaluator,
-};
-
+use ic_types::{ingress::WasmResult, Cycles};
 use k256::elliptic_curve::PrimeField;
 use k256::{
     ecdsa::{hazmat, Signature},
     Scalar, Secp256k1,
 };
+use libafl::executors::ExitKind;
+use libafl::inputs::ValueInput;
+use once_cell::sync::OnceCell;
+use sandbox_shim::sandbox_main;
 use sha2::{Digest, Sha256};
+use std::path::PathBuf;
+use std::time::Duration;
 
-use libafl::monitors::SimpleMonitor;
-// use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
-use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 use slog::Level;
 
-const EXECUTION_DIR: &str = "fuzzers/motoko_diff";
-static mut TEST: Lazy<RefCell<(StateMachine, CanisterId)>> =
-    Lazy::new(|| RefCell::new(create_execution_test()));
+use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
+use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
+use canister_fuzzer::util::read_canister_bytes;
+
+static TEST: OnceCell<StateMachine> = OnceCell::new();
 static mut COVERAGE_MAP: &mut [u8] = &mut [0; 65536];
 
-fn read_canister_bytes() -> Vec<u8> {
-    let wasm_path = std::path::PathBuf::from(std::env::var("MOTOKO_CANISTER_WASM_PATH").unwrap());
-    let mut f = File::open(wasm_path).unwrap();
-    let mut buffer = Vec::new();
-    f.read_to_end(&mut buffer).unwrap();
-    buffer
-}
-
-fn create_execution_test() -> (StateMachine, CanisterId) {
-    let test = StateMachineBuilder::new()
-        .with_log_level(Some(Level::Critical))
-        .build();
-
-    let canister_id = test
-        .install_canister_with_cycles(
-            read_canister_bytes(),
-            vec![],
-            None,
-            Cycles::new(5_000_000_000_000),
-        )
-        .unwrap();
-    (test, canister_id)
-}
-
 fn main() {
-    sandbox_main(run);
+    fn shim() {
+        let fuzzer_state = MotokoDiffFuzzer(FuzzerState {
+            state: None,
+            canisters: vec![CanisterInfo {
+                id: None,
+                name: "ecdsa_sign".to_string(),
+                env_var: "MOTOKO_CANISTER_WASM_PATH".to_string(),
+            }],
+            fuzzer_dir: PathBuf::from("fuzzers/motoko_diff"),
+        });
+
+        orchestrator::run(fuzzer_state);
+    }
+    sandbox_main(shim);
 }
 
-#[allow(static_mut_refs)]
-pub fn run() {
-    let mut harness = |input: &BytesInput| {
-        let canister_id = unsafe { TEST.borrow().1 };
-        let test = unsafe { &mut TEST.borrow_mut().0 };
+struct MotokoDiffFuzzer<'a>(FuzzerState<'a>);
 
-        // Update main result here
-        let bytes: Vec<u8> = (*input).clone().into();
+impl FuzzerOrchestrator for MotokoDiffFuzzer<'_> {
+    fn init(&mut self) {
+        let test = StateMachineBuilder::new()
+            .with_log_level(Some(Level::Critical))
+            .build();
+
+        assert!(TEST.set(test).is_ok());
+        let fuzzer_state = &mut self.0;
+        fuzzer_state.state = TEST.get();
+
+        for info in fuzzer_state.canisters.iter_mut() {
+            let module = read_canister_bytes(&info.env_var);
+            let canister_id = fuzzer_state
+                .state
+                .unwrap()
+                .install_canister_with_cycles(module, vec![], None, Cycles::new(5_000_000_000_000))
+                .unwrap();
+            info.id = Some(canister_id);
+        }
+    }
+
+    fn setup(&self) {}
+
+    fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
+        let fuzzer_state = &self.0;
+        let test = fuzzer_state.state.unwrap();
+
+        let bytes: Vec<u8> = input.into();
         let mut key = [0u8; 32];
         getrandom::fill(&mut key).unwrap();
         let mut k = [0u8; 32];
@@ -88,18 +80,36 @@ pub fn run() {
         let digest = hasher.finalize();
         let b = digest.as_slice().to_vec();
         let payload = candid::Encode!(&b, &key, &k).unwrap();
-        let result = test.execute_ingress(canister_id, "sign_ecdsa", payload);
+        let result = test.execute_ingress(
+            fuzzer_state.get_cansiter_id_by_name("ecdsa_sign"),
+            "sign_ecdsa",
+            payload,
+        );
 
         // Update main result here (test for hash)
-        // let bytes: Vec<u8> = (*input).clone().into();
+        // let bytes: Vec<u8> = input.into();
         // let mut hasher = Sha256::new();
         // hasher.update(bytes);
         // let digest = hasher.finalize();
         // let b = digest.as_slice().to_vec();
         // let payload = candid::Encode!(&bytes).unwrap();
-        // let result = test.execute_ingress(canister_id, "sign_ecdsa", payload);
+        // let result = test.execute_ingress(fuzzer_state.get_cansiter_id_by_name("ecdsa_sign"), "sign_ecdsa", payload);
 
         let exit_status = match result {
+            Ok(WasmResult::Reply(bytes)) => {
+                let result = Decode!(&bytes, Vec<u8>).unwrap();
+                let d = Scalar::from_repr(key.into()).unwrap();
+                let k = Scalar::from_repr(k.into()).unwrap();
+
+                let (signature, _): (Signature, _) =
+                    hazmat::sign_prehashed::<Secp256k1, Scalar>(&d, k, &digest).unwrap();
+                let signature_old = Signature::from_der(&result).unwrap();
+
+                if signature != signature_old {
+                    return ExitKind::Crash;
+                }
+                ExitKind::Ok
+            }
             Ok(WasmResult::Reject(message)) => {
                 // Canister crashing is interesting
                 if message.contains("Canister trapped") {
@@ -115,91 +125,42 @@ pub fn run() {
                 }
                 _ => ExitKind::Ok,
             },
-            Ok(WasmResult::Reply(bytes)) => {
-                let result = Decode!(&bytes, Vec<u8>).unwrap();
-                let d = Scalar::from_repr(key.into()).unwrap();
-                let k = Scalar::from_repr(k.into()).unwrap();
-
-                let (signature, _): (Signature, _) =
-                    hazmat::sign_prehashed::<Secp256k1, Scalar>(&d, k, &digest).unwrap();
-                let signature_old = Signature::from_der(&result).unwrap();
-
-                if signature != signature_old {
-                    return ExitKind::Crash;
-                }
-                ExitKind::Ok
-            }
         };
 
         test.advance_time(Duration::from_secs(1));
         test.tick();
+        exit_status
+    }
 
-        let result = test.query(canister_id, "export_coverage", vec![]);
+    fn cleanup(&self) {}
+
+    fn input_dir(&self) -> PathBuf {
+        self.0.get_root_dir().join("input")
+    }
+
+    fn crashes_dir(&self) -> PathBuf {
+        self.0.get_root_dir().join("crashes")
+    }
+
+    fn corpus_dir(&self) -> PathBuf {
+        self.0.get_root_dir().join("corpus")
+    }
+
+    #[allow(static_mut_refs)]
+    fn set_coverage_map(&self) {
+        let fuzzer_state = &self.0;
+        let test = fuzzer_state.state.unwrap();
+        let result = test.query(
+            fuzzer_state.get_cansiter_id_by_name("ecdsa_sign"),
+            "export_coverage",
+            vec![],
+        );
         if let Ok(WasmResult::Reply(result)) = result {
             unsafe { COVERAGE_MAP.copy_from_slice(&result) };
         }
-
-        // Maybe look into instructions consumed?
-        exit_status
-    };
-
-    let hitcount_map_observer =
-        HitcountsMapObserver::new(unsafe { StdMapObserver::new("coverage_map", COVERAGE_MAP) });
-    let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
-    let mut feedback = afl_map_feedback;
-    let mut objective = CrashFeedback::new();
-
-    let mut state = StdState::new(
-        StdRand::with_seed(current_nanos()),
-        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{EXECUTION_DIR}/input"))).unwrap(),
-        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{EXECUTION_DIR}/crashes"))).unwrap(),
-        &mut feedback,
-        &mut objective,
-    )
-    .unwrap();
-
-    let mon = SimpleMonitor::new(|s| println!("{s}"));
-
-    // let ui = TuiUI::with_version(
-    //     String::from("Decode Candid by Instruction / Input Ratio"),
-    //     String::from("0.0.1"),
-    //     false,
-    // );
-    // let mon = TuiMonitor::new(ui);
-
-    let mut mgr = SimpleEventManager::new(mon);
-    let scheduler = QueueScheduler::new();
-    let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
-
-    let mut executor = InProcessExecutor::new(
-        &mut harness,
-        tuple_list!(hitcount_map_observer),
-        &mut fuzzer,
-        &mut state,
-        &mut mgr,
-    )
-    .expect("Failed to create the Executor");
-
-    // bazel run @candid//:didc random -- -d gateway.did -t '(HttpResponse)' | bazel run @candid//:didc encode | xxd -r -p
-    let paths = fs::read_dir(PathBuf::from(format!("{EXECUTION_DIR}/corpus"))).unwrap();
-    for path in paths {
-        let p = path.unwrap().path();
-        let mut f = File::open(p.clone()).unwrap();
-        let mut buffer = Vec::new();
-        f.read_to_end(&mut buffer).unwrap();
-        fuzzer
-            .evaluate_input(
-                &mut state,
-                &mut executor,
-                &mut mgr,
-                &BytesInput::new(buffer),
-            )
-            .unwrap();
     }
 
-    let mutator = HavocScheduledMutator::new(havoc_mutations());
-    let mut stages = tuple_list!(StdMutationalStage::new(mutator));
-    fuzzer
-        .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
-        .expect("Error in the fuzzing loop");
+    fn get_coverage_map(&self) -> &mut [u8] {
+        unsafe { COVERAGE_MAP }
+    }
 }

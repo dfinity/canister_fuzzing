@@ -1,114 +1,95 @@
 use candid::{Decode, Encode};
-use ic_base_types::PrincipalId;
 use ic_state_machine_tests::{two_subnets_simple, StateMachine};
-use ic_types::Cycles;
-use ic_types::{ingress::WasmResult, CanisterId};
+use ic_types::PrincipalId;
+use ic_types::{ingress::WasmResult, Cycles};
+use libafl::executors::ExitKind;
 use libafl::inputs::ValueInput;
-use once_cell::sync::Lazy;
+use once_cell::sync::OnceCell;
 use sandbox_shim::sandbox_main;
-use std::cell::RefCell;
-use std::fs;
-use std::fs::File;
-use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
-use libafl::{
-    corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
-    events::SimpleEventManager,
-    executors::{inprocess::InProcessExecutor, ExitKind},
-    feedbacks::{map::AflMapFeedback, CrashFeedback},
-    fuzzer::{Fuzzer, StdFuzzer},
-    inputs::BytesInput,
-    mutators::{havoc_mutations, HavocScheduledMutator},
-    observers::map::{hitcount_map::HitcountsMapObserver, StdMapObserver},
-    schedulers::QueueScheduler,
-    stages::mutational::StdMutationalStage,
-    state::StdState,
-    Evaluator,
-};
+use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
+use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
+use canister_fuzzer::util::read_canister_bytes;
 
-use libafl::monitors::SimpleMonitor;
-// use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
-use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
-
-#[allow(dead_code)]
-fn bytes_to_u64(bytes: &[u8]) -> u64 {
-    let mut result = 0u64;
-    for &byte in bytes.iter().take(8).rev() {
-        result = (result << 8) | byte as u64;
-    }
-    result
-}
-
-struct State {
-    test: Arc<StateMachine>,
-    ledger_canister_id: CanisterId,
-    main_canister_id: CanisterId,
-}
-
-const EXECUTION_DIR: &str = "fuzzers/trap_after_await";
-const SYNCHRONOUS_EXECUTION: bool = false;
-static mut TEST: Lazy<RefCell<State>> = Lazy::new(|| RefCell::new(create_execution_test()));
+static TEST: OnceCell<StateMachine> = OnceCell::new();
 static mut COVERAGE_MAP: &mut [u8] = &mut [0; 65536];
+const SYNCHRONOUS_EXECUTION: bool = false;
 
 fn main() {
-    sandbox_main(run);
-}
+    fn shim() {
+        let fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState {
+            state: None,
+            canisters: vec![
+                CanisterInfo {
+                    id: None,
+                    name: "ledger".to_string(),
+                    env_var: "LEDGER_WASM_PATH".to_string(),
+                },
+                CanisterInfo {
+                    id: None,
+                    name: "transfer".to_string(),
+                    env_var: "TRANSFER_WASM_PATH".to_string(),
+                },
+            ],
+            fuzzer_dir: PathBuf::from("fuzzers/trap_after_await"),
+        });
 
-fn read_transfer_canister_bytes() -> Vec<u8> {
-    let wasm_path = std::path::PathBuf::from(std::env::var("TRANSFER_WASM_PATH").unwrap());
-    let mut f = File::open(wasm_path).unwrap();
-    let mut buffer = Vec::new();
-    f.read_to_end(&mut buffer).unwrap();
-    buffer
-}
-
-fn read_ledger_canister_bytes() -> Vec<u8> {
-    let wasm_path = std::path::PathBuf::from(std::env::var("LEDGER_WASM_PATH").unwrap());
-    let mut f = File::open(wasm_path).unwrap();
-    let mut buffer = Vec::new();
-    f.read_to_end(&mut buffer).unwrap();
-    buffer
-}
-
-fn create_execution_test() -> State {
-    let (test, _s2) = two_subnets_simple();
-
-    // Install ledger canister
-    let ledger_canister_id = test
-        .install_canister_with_cycles(
-            read_ledger_canister_bytes(),
-            vec![],
-            None,
-            Cycles::new(u128::MAX / 2),
-        )
-        .unwrap();
-
-    // Install main canister
-    let main_canister_id = test
-        .install_canister_with_cycles(
-            read_transfer_canister_bytes(),
-            Encode!(&ledger_canister_id).unwrap(),
-            None,
-            Cycles::new(u128::MAX / 2),
-        )
-        .unwrap();
-
-    State {
-        test,
-        ledger_canister_id,
-        main_canister_id,
+        orchestrator::run(fuzzer_state);
     }
+    sandbox_main(shim);
 }
 
-#[allow(static_mut_refs)]
-pub fn run() {
-    let mut harness = |input: &BytesInput| {
-        let ledger_canister_id = unsafe { TEST.borrow().ledger_canister_id };
-        let main_canister_id = unsafe { TEST.borrow().main_canister_id };
-        let test = unsafe { &TEST.borrow_mut().test };
+struct TrapAfterAwaitFuzzer<'a>(FuzzerState<'a>);
+
+impl FuzzerOrchestrator for TrapAfterAwaitFuzzer<'_> {
+    fn init(&mut self) {
+        let (test, _) = two_subnets_simple();
+
+        // DANGERRR: It's unknwown why the strong ref count is 2 here.
+        let stolen_value: StateMachine = unsafe {
+            let ptr = Arc::as_ptr(&test) as *mut StateMachine;
+            let value = std::ptr::read(ptr);
+            std::mem::forget(test);
+            value
+        };
+        assert!(TEST.set(stolen_value).is_ok());
+        let fuzzer_state = &mut self.0;
+        fuzzer_state.state = TEST.get();
+
+        let module = read_canister_bytes(&fuzzer_state.get_cansiter_env_by_name("ledger"));
+
+        let ledger_canister_id = fuzzer_state
+            .state
+            .unwrap()
+            .install_canister_with_cycles(module, vec![], None, Cycles::new(u128::MAX / 2))
+            .unwrap();
+
+        let module = read_canister_bytes(&fuzzer_state.get_cansiter_env_by_name("transfer"));
+
+        let main_canister_id = fuzzer_state
+            .state
+            .unwrap()
+            .install_canister_with_cycles(
+                module,
+                Encode!(&ledger_canister_id).unwrap(),
+                None,
+                Cycles::new(u128::MAX / 2),
+            )
+            .unwrap();
+
+        let canisters = [ledger_canister_id, main_canister_id];
+        for (info, id) in fuzzer_state.canisters.iter_mut().zip(canisters) {
+            info.id = Some(id)
+        }
+    }
+
+    fn setup(&self) {
+        let fuzzer_state = &self.0;
+        let test = fuzzer_state.state.unwrap();
+        let main_canister_id = fuzzer_state.get_cansiter_id_by_name("transfer");
+        let ledger_canister_id = fuzzer_state.get_cansiter_id_by_name("ledger");
 
         // Prepare the main canister
         // Adds a local balance of 10_000_000 to anonymous principal
@@ -144,10 +125,17 @@ pub fn run() {
 
         // should never fail
         assert_eq!(b1, b2);
+    }
 
+    fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
+        let fuzzer_state = &self.0;
+        let test = fuzzer_state.state.unwrap();
+        let main_canister_id = fuzzer_state.get_cansiter_id_by_name("transfer");
+        let ledger_canister_id = fuzzer_state.get_cansiter_id_by_name("ledger");
+
+        let trap: Vec<u8> = input.into();
         // Initialize payload from bytes
         // let trap = Encode!(&(bytes_to_u64(input.bytes()) % 500_000)).unwrap();
-        let trap = input.clone().into_inner().to_vec();
         // let trap = 3278_u64;
 
         if SYNCHRONOUS_EXECUTION {
@@ -206,82 +194,38 @@ pub fn run() {
             println!("Results fail b1 : {b1}, b2 : {b2}");
             return ExitKind::Crash;
         }
-
-        // Report coverage
-        let result = test.query(main_canister_id, "export_coverage", vec![]);
-        if let Ok(WasmResult::Reply(result)) = result {
-            unsafe {
-                COVERAGE_MAP.copy_from_slice(&result);
-            };
-        }
-
-        test.advance_time(Duration::from_secs(1));
-
         ExitKind::Ok
-    };
-
-    // The harness is too slow
-    // Initialization of state is done this way.
-    let start = harness(&ValueInput::<Vec<u8>>::default());
-    println!("Initialized state: {start:?}");
-
-    let hitcount_map_observer =
-        HitcountsMapObserver::new(unsafe { StdMapObserver::new("coverage_map", COVERAGE_MAP) });
-    let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
-    let mut feedback = afl_map_feedback;
-    let mut objective = CrashFeedback::new();
-
-    let mut state = StdState::new(
-        StdRand::with_seed(current_nanos()),
-        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{EXECUTION_DIR}/input"))).unwrap(),
-        InMemoryOnDiskCorpus::no_meta(PathBuf::from(format!("{EXECUTION_DIR}/crashes"))).unwrap(),
-        &mut feedback,
-        &mut objective,
-    )
-    .unwrap();
-
-    let mon = SimpleMonitor::new(|s| println!("{s}"));
-
-    // let ui = TuiUI::with_version(
-    //     String::from("Decode Candid by Instruction / Input Ratio"),
-    //     String::from("0.0.1"),
-    //     false,
-    // );
-    // let mon = TuiMonitor::new(ui);
-
-    let mut mgr = SimpleEventManager::new(mon);
-    let scheduler = QueueScheduler::new();
-    let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
-
-    let mut executor = InProcessExecutor::new(
-        &mut harness,
-        tuple_list!(hitcount_map_observer),
-        &mut fuzzer,
-        &mut state,
-        &mut mgr,
-    )
-    .expect("Failed to create the Executor");
-
-    // bazel run @candid//:didc random -- -t '(nat64)' | bazel run @candid//:didc encode | xxd -r -p
-    let paths = fs::read_dir(PathBuf::from(format!("{EXECUTION_DIR}/corpus"))).unwrap();
-    for path in paths {
-        let p = path.unwrap().path();
-        let mut f = File::open(p.clone()).unwrap();
-        let mut buffer = Vec::new();
-        f.read_to_end(&mut buffer).unwrap();
-        fuzzer
-            .evaluate_input(
-                &mut state,
-                &mut executor,
-                &mut mgr,
-                &BytesInput::new(buffer),
-            )
-            .unwrap();
     }
 
-    let mutator = HavocScheduledMutator::new(havoc_mutations());
-    let mut stages = tuple_list!(StdMutationalStage::new(mutator));
-    fuzzer
-        .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
-        .expect("Error in the fuzzing loop");
+    fn cleanup(&self) {}
+
+    fn input_dir(&self) -> PathBuf {
+        self.0.get_root_dir().join("input")
+    }
+
+    fn crashes_dir(&self) -> PathBuf {
+        self.0.get_root_dir().join("crashes")
+    }
+
+    fn corpus_dir(&self) -> PathBuf {
+        self.0.get_root_dir().join("corpus")
+    }
+
+    #[allow(static_mut_refs)]
+    fn set_coverage_map(&self) {
+        let fuzzer_state = &self.0;
+        let test = fuzzer_state.state.unwrap();
+        let result = test.query(
+            fuzzer_state.get_cansiter_id_by_name("transfer"),
+            "export_coverage",
+            vec![],
+        );
+        if let Ok(WasmResult::Reply(result)) = result {
+            unsafe { COVERAGE_MAP.copy_from_slice(&result) };
+        }
+    }
+
+    fn get_coverage_map(&self) -> &mut [u8] {
+        unsafe { COVERAGE_MAP }
+    }
 }

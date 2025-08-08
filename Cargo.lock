@@ -771,6 +771,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "canister_fuzzer"
+version = "0.1.0"
+dependencies = [
+ "candid",
+ "ic-base-types",
+ "ic-state-machine-tests",
+ "ic-types",
+ "libafl",
+ "libafl_bolts",
+ "once_cell",
+ "serde",
+ "slog",
+]
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1498,6 +1513,7 @@ name = "decode_candid_by_instructions"
 version = "0.1.0"
 dependencies = [
  "build_canister",
+ "canister_fuzzer",
  "ic-state-machine-tests",
  "ic-types",
  "libafl",
@@ -5717,17 +5733,14 @@ version = "0.1.0"
 dependencies = [
  "build_canister",
  "candid",
+ "canister_fuzzer",
  "getrandom 0.3.3",
- "ic-base-types",
  "ic-state-machine-tests",
  "ic-types",
  "k256",
  "libafl",
- "libafl_bolts",
  "once_cell",
- "rand_core 0.9.3",
  "sandbox_shim",
- "serde",
  "sha2",
  "slog",
 ]
@@ -5738,14 +5751,12 @@ version = "0.1.0"
 dependencies = [
  "build_canister",
  "candid",
- "ic-base-types",
+ "canister_fuzzer",
  "ic-state-machine-tests",
  "ic-types",
  "libafl",
- "libafl_bolts",
  "once_cell",
  "sandbox_shim",
- "serde",
  "slog",
 ]
 
@@ -7632,15 +7643,12 @@ name = "stable_memory_ops"
 version = "0.1.0"
 dependencies = [
  "build_canister",
- "candid",
- "ic-base-types",
+ "canister_fuzzer",
  "ic-state-machine-tests",
  "ic-types",
  "libafl",
- "libafl_bolts",
  "once_cell",
  "sandbox_shim",
- "serde",
  "slog",
 ]
 
@@ -8370,6 +8378,7 @@ version = "0.1.0"
 dependencies = [
  "build_canister",
  "candid",
+ "canister_fuzzer",
  "ic-base-types",
  "ic-state-machine-tests",
  "ic-types",

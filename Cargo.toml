@@ -13,6 +13,7 @@ members = [
     "instrumentation",
     "sandbox_shim",
     "build_canister",
+    "canister_fuzzer",
 ]
 
 resolver = "2"
