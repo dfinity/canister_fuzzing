@@ -1,4 +1,4 @@
-use candid::{Decode, Encode};
+use candid::Encode;
 use ic_state_machine_tests::ErrorCode;
 use ic_state_machine_tests::{StateMachine, StateMachineBuilder};
 use ic_types::{ingress::WasmResult, CanisterId, Cycles};
@@ -86,7 +86,7 @@ pub fn run() {
             }
             Err(e) => match e.code() {
                 ErrorCode::CanisterTrapped | ErrorCode::CanisterCalledTrap => {
-                    println!("{:?} result", e);
+                    println!("{e:?} result");
                     ExitKind::Crash
                 }
                 _ => ExitKind::Ok,

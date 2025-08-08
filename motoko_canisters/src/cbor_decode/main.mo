@@ -11,7 +11,7 @@ persistent actor CborParser {
    * print the outcome of the parsing attempt to the canister's logs.
    * @param bytes The raw CBOR data as an array of Nat8.
    */
-  public func parse_cbor(bytes: [Nat8]) : async () {
+  public func parse_cbor(bytes : [Nat8]) : async () {
     let _dagValue = DagCbor.fromBytes(bytes.vals());
   };
-}
+};

@@ -1,4 +1,4 @@
-use candid::{Encode, Decode};
+use candid::{Decode, Encode};
 use ic_state_machine_tests::ErrorCode;
 use ic_state_machine_tests::{StateMachine, StateMachineBuilder};
 use ic_types::{ingress::WasmResult, CanisterId, Cycles};
@@ -26,19 +26,17 @@ use libafl::{
     Evaluator,
 };
 
+use k256::elliptic_curve::PrimeField;
 use k256::{
     ecdsa::{hazmat, Signature},
-    Scalar,
-    Secp256k1,
+    Scalar, Secp256k1,
 };
-use k256::elliptic_curve::PrimeField;
 use sha2::{Digest, Sha256};
 
 use libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 use slog::Level;
-
 
 const EXECUTION_DIR: &str = "fuzzers/motoko_diff";
 static mut TEST: Lazy<RefCell<(StateMachine, CanisterId)>> =
@@ -112,7 +110,7 @@ pub fn run() {
             }
             Err(e) => match e.code() {
                 ErrorCode::CanisterTrapped | ErrorCode::CanisterCalledTrap => {
-                    println!("{:?} result", e);
+                    println!("{e:?} result");
                     ExitKind::Crash
                 }
                 _ => ExitKind::Ok,
@@ -122,9 +120,10 @@ pub fn run() {
                 let d = Scalar::from_repr(key.into()).unwrap();
                 let k = Scalar::from_repr(k.into()).unwrap();
 
-                let (signature, _): (Signature, _) = hazmat::sign_prehashed::<Secp256k1, Scalar>(&d, k, &digest).unwrap();
+                let (signature, _): (Signature, _) =
+                    hazmat::sign_prehashed::<Secp256k1, Scalar>(&d, k, &digest).unwrap();
                 let signature_old = Signature::from_der(&result).unwrap();
-                
+
                 if signature != signature_old {
                     return ExitKind::Crash;
                 }

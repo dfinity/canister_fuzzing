@@ -35,8 +35,8 @@ persistent actor CandidParser {
   };
   public type StreamingToken = {};
 
-  public func parse_candid(bytes: Blob) : async () {
-    let response: ?HttpResponse = from_candid(bytes);
+  public func parse_candid(bytes : Blob) : async () {
+    let response : ?HttpResponse = from_candid (bytes);
   };
 
-}
+};
