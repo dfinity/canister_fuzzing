@@ -1,16 +1,18 @@
+use canister_fuzzer::custom::decode_map::{DecodingMapFeedback, DECODING_MAP_OBSERVER_NAME, MAP};
 use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::FuzzerOrchestrator;
 use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::read_canister_bytes;
-use canister_fuzzer::custom::decode_map::{DecodingMapFeedback, DECODING_MAP_OBSERVER_NAME, MAP};
 
+use candid::{Decode, Encode};
 use ic_state_machine_tests::{ErrorCode, StateMachineBuilder};
 use ic_types::{ingress::WasmResult, Cycles};
 use libafl::executors::ExitKind;
 use libafl::feedback_or;
 use libafl::inputs::ValueInput;
 use libafl::observers::RefCellValueObserver;
+use libafl::stages::{AflStatsStage, CalibrationStage};
 use slog::Level;
 use std::fs::{self, File};
 use std::io::Read;
@@ -44,7 +46,7 @@ fn main() {
         state: None,
         canisters: vec![CanisterInfo {
             id: None,
-            name: "decode_candid".to_string(),
+            name: "candid_decode".to_string(),
             env_var: "DECODE_CANDID_WASM_PATH".to_string(),
         }],
         fuzzer_dir: PathBuf::from("examples/decode_candid_by_instructions"),
@@ -84,15 +86,16 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
 
         let bytes: Vec<u8> = input.into();
         let result = test.execute_ingress(
-            fuzzer_state.get_cansiter_id_by_name("decode_candid"),
-            "decode",
-            bytes.clone(),
+            fuzzer_state.get_cansiter_id_by_name("candid_decode"),
+            "parse_candid",
+            Encode!(&bytes).unwrap(),
         );
         let instructions = match result {
             Ok(WasmResult::Reply(result)) => {
-                let mut instructions = [0u8; 8];
-                instructions.clone_from_slice(&result[0..8]);
-                u64::from_le_bytes(instructions)
+                // let mut instructions = [0u8; 8];
+                // instructions.clone_from_slice(&result[0..8]);
+                // u64::from_le_bytes(instructions)
+                Decode!(&result, u64).unwrap()
             }
             Ok(WasmResult::Reject(message)) => {
                 // Canister crashing is interesting
@@ -103,8 +106,9 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
             }
             Err(e) => match e.code() {
                 ErrorCode::CanisterTrapped | ErrorCode::CanisterCalledTrap => {
-                    println!("{e:?} result");
-                    return ExitKind::Crash;
+                    // println!("{e:?} result");
+                    // return ExitKind::Ok;
+                    0
                 }
                 _ => 0,
             },
@@ -119,6 +123,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         if ratio > previous_ratio {
             decoding_map.increased = true;
             decoding_map.previous_ratio = ratio;
+            println!("Current ratio {ratio:?}, previous ratio {previous_ratio:?}");
         } else {
             decoding_map.increased = false;
         }
@@ -150,7 +155,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let fuzzer_state = &self.0;
         let test = fuzzer_state.state.as_ref().unwrap();
         let result = test.query(
-            fuzzer_state.get_cansiter_id_by_name("decode_candid"),
+            fuzzer_state.get_cansiter_id_by_name("candid_decode"),
             "export_coverage",
             vec![],
         );
@@ -189,8 +194,14 @@ where
     let hitcount_map_observer =
         HitcountsMapObserver::new(unsafe { StdMapObserver::new("coverage_map", COVERAGE_MAP) });
     let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
+    let calibration_stage = CalibrationStage::new(&afl_map_feedback);
     let mut feedback = feedback_or!(decoding_feedback, afl_map_feedback);
     let mut objective = CrashFeedback::new();
+
+    let stats_stage = AflStatsStage::builder()
+        .map_observer(&hitcount_map_observer)
+        .build()
+        .unwrap();
 
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
@@ -241,7 +252,11 @@ where
     }
 
     let mutator = HavocScheduledMutator::new(havoc_mutations());
-    let mut stages = tuple_list!(StdMutationalStage::new(mutator));
+    let mut stages = tuple_list!(
+        calibration_stage,
+        StdMutationalStage::new(mutator),
+        stats_stage
+    );
     fuzzer
         .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
         .expect("Error in the fuzzing loop");

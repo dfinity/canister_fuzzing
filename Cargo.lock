@@ -1518,6 +1518,7 @@ name = "decode_candid_by_instructions"
 version = "0.1.0"
 dependencies = [
  "build_canister",
+ "candid",
  "canister_fuzzer",
  "ic-state-machine-tests",
  "ic-types",

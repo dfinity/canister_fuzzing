@@ -40,7 +40,7 @@ persistent actor CandidParser {
     let c1 = IC.performanceCounter(0);
     let _response : ?HttpResponse = from_candid (bytes);
     let c2 = IC.performanceCounter(0) - c1;
-    return c2
+    return c2;
   };
 
 };
