@@ -1,11 +1,9 @@
-mod decode_map;
-use decode_map::{DecodingMapFeedback, DECODING_MAP_OBSERVER_NAME, MAP};
-
 use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::FuzzerOrchestrator;
 use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::read_canister_bytes;
+use canister_fuzzer::custom::decode_map::{DecodingMapFeedback, DECODING_MAP_OBSERVER_NAME, MAP};
 
 use ic_state_machine_tests::{ErrorCode, StateMachineBuilder};
 use ic_types::{ingress::WasmResult, Cycles};

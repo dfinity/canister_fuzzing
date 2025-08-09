@@ -1,4 +1,5 @@
 import Blob "mo:base/Blob";
+import IC "mo:base/ExperimentalInternetComputer";
 
 persistent actor CandidParser {
 
@@ -35,8 +36,11 @@ persistent actor CandidParser {
   };
   public type StreamingToken = {};
 
-  public func parse_candid(bytes : Blob) : async () {
-    let response : ?HttpResponse = from_candid (bytes);
+  public func parse_candid(bytes : Blob) : async Nat64 {
+    let c1 = IC.performanceCounter(0);
+    let _response : ?HttpResponse = from_candid (bytes);
+    let c2 = IC.performanceCounter(0) - c1;
+    return c2
   };
 
 };
