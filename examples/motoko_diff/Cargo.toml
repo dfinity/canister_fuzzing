@@ -1,25 +1,23 @@
 [package]
-name = "trap_after_await"
+name = "motoko_diff"
 version.workspace = true
 edition.workspace = true
 
 build = "build.rs"
 
 [[bin]]
-name = "trap_after_await"
-path = "src/trap_after_await.rs"
+name = "motoko_diff"
+path = "src/motoko_diff.rs"
 
 [dependencies]
 ic-state-machine-tests = { workspace = true }
-ic-base-types = { workspace = true }
 ic-types = { workspace = true }
 candid = { workspace = true }
 slog = { workspace = true }
 libafl = { workspace = true }
-libafl_bolts = { workspace = true }
-once_cell = { workspace = true }
-serde = { workspace = true }
-sandbox_shim = { path = "../../sandbox_shim/"}
+getrandom = { workspace = true }
+k256 = { workspace = true }
+sha2 = { workspace = true }
 canister_fuzzer = { path = "../../canister_fuzzer/"}
 
 [build-dependencies]

@@ -1,25 +1,24 @@
 mod decode_map;
-use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
-use canister_fuzzer::orchestrator::FuzzerOrchestrator;
-use canister_fuzzer::util::read_canister_bytes;
 use decode_map::{DecodingMapFeedback, DECODING_MAP_OBSERVER_NAME, MAP};
-use ic_state_machine_tests::{ErrorCode, StateMachine, StateMachineBuilder};
+
+use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
+use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
+use canister_fuzzer::orchestrator::FuzzerOrchestrator;
+use canister_fuzzer::sandbox_shim::sandbox_main;
+use canister_fuzzer::util::read_canister_bytes;
+
+use ic_state_machine_tests::{ErrorCode, StateMachineBuilder};
 use ic_types::{ingress::WasmResult, Cycles};
 use libafl::executors::ExitKind;
 use libafl::feedback_or;
 use libafl::inputs::ValueInput;
 use libafl::observers::RefCellValueObserver;
-use once_cell::sync::OnceCell;
-use sandbox_shim::sandbox_main;
 use slog::Level;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::PathBuf;
 use std::ptr::addr_of;
 use std::time::Duration;
-
-static TEST: OnceCell<StateMachine> = OnceCell::new();
-static mut COVERAGE_MAP: &mut [u8] = &mut [0; 65536];
 
 use libafl::{
     corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
@@ -40,116 +39,37 @@ use libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
+static mut COVERAGE_MAP: &mut [u8] = &mut [0; 65536];
+
 fn main() {
-    fn shim() {
-        let mut orchestrator = DecodeCandidFuzzer(FuzzerState {
-            state: None,
-            canisters: vec![CanisterInfo {
-                id: None,
-                name: "decode_candid".to_string(),
-                env_var: "DECODE_CANDID_WASM_PATH".to_string(),
-            }],
-            fuzzer_dir: PathBuf::from("fuzzers/decode_candid_by_instructions"),
-        });
+    let fuzzer_state = DecodeCandidFuzzer(FuzzerState {
+        state: None,
+        canisters: vec![CanisterInfo {
+            id: None,
+            name: "decode_candid".to_string(),
+            env_var: "DECODE_CANDID_WASM_PATH".to_string(),
+        }],
+        fuzzer_dir: PathBuf::from("examples/decode_candid_by_instructions"),
+    });
 
-        orchestrator.init();
-
-        let mut harness = |input: &BytesInput| {
-            orchestrator.setup();
-            let result = orchestrator.execute(input.clone());
-            orchestrator.set_coverage_map();
-            orchestrator.cleanup();
-            result
-        };
-
-        let decoding_map_observer = unsafe {
-            RefCellValueObserver::new(
-                DECODING_MAP_OBSERVER_NAME,
-                libafl_bolts::ownedref::OwnedRef::from_ptr(addr_of!(MAP)),
-            )
-        };
-
-        let decoding_feedback = DecodingMapFeedback::new();
-        let hitcount_map_observer =
-            HitcountsMapObserver::new(unsafe { StdMapObserver::new("coverage_map", COVERAGE_MAP) });
-        let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
-        let mut feedback = feedback_or!(decoding_feedback, afl_map_feedback);
-        let mut objective = CrashFeedback::new();
-
-        let mut state = StdState::new(
-            StdRand::with_seed(current_nanos()),
-            InMemoryOnDiskCorpus::no_meta(orchestrator.input_dir()).unwrap(),
-            InMemoryOnDiskCorpus::no_meta(orchestrator.crashes_dir()).unwrap(),
-            &mut feedback,
-            &mut objective,
-        )
-        .unwrap();
-
-        let mon = SimpleMonitor::new(|s| println!("{s}"));
-
-        // let ui = TuiUI::with_version(
-        //     String::from("Decode Candid by Instruction / Input Ratio"),
-        //     String::from("0.0.1"),
-        //     false,
-        // );
-        // let mon = TuiMonitor::new(ui);
-
-        let mut mgr = SimpleEventManager::new(mon);
-        let scheduler = QueueScheduler::new();
-        let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
-
-        let mut executor = InProcessExecutor::new(
-            &mut harness,
-            tuple_list!(hitcount_map_observer, decoding_map_observer),
-            &mut fuzzer,
-            &mut state,
-            &mut mgr,
-        )
-        .expect("Failed to create the Executor");
-
-        // bazel run @candid//:didc random -- -d gateway.did -t '(HttpResponse)' | bazel run @candid//:didc encode | xxd -r -p
-        let paths = fs::read_dir(orchestrator.corpus_dir()).unwrap();
-        for path in paths {
-            let p = path.unwrap().path();
-            let mut f = File::open(p.clone()).unwrap();
-            let mut buffer = Vec::new();
-            f.read_to_end(&mut buffer).unwrap();
-            fuzzer
-                .evaluate_input(
-                    &mut state,
-                    &mut executor,
-                    &mut mgr,
-                    &BytesInput::new(buffer),
-                )
-                .unwrap();
-        }
-
-        let mutator = HavocScheduledMutator::new(havoc_mutations());
-        let mut stages = tuple_list!(StdMutationalStage::new(mutator));
-        fuzzer
-            .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
-            .expect("Error in the fuzzing loop");
-    }
-
-    sandbox_main(shim);
+    sandbox_main(run, fuzzer_state);
 }
 
-struct DecodeCandidFuzzer<'a>(FuzzerState<'a>);
+struct DecodeCandidFuzzer(FuzzerState);
 
-impl FuzzerOrchestrator for DecodeCandidFuzzer<'_> {
+impl FuzzerOrchestrator for DecodeCandidFuzzer {
     fn init(&mut self) {
         let test = StateMachineBuilder::new()
             .with_log_level(Some(Level::Critical))
             .build();
-
-        assert!(TEST.set(test).is_ok());
         let fuzzer_state = &mut self.0;
-        fuzzer_state.state = TEST.get();
+        fuzzer_state.state = Some(test);
 
         for info in fuzzer_state.canisters.iter_mut() {
-            let module = read_canister_bytes(&info.env_var);
+            let module = instrument_wasm_for_fuzzing(&read_canister_bytes(&info.env_var));
             let canister_id = fuzzer_state
                 .state
+                .as_ref()
                 .unwrap()
                 .install_canister_with_cycles(module, vec![], None, Cycles::new(5_000_000_000_000))
                 .unwrap();
@@ -162,7 +82,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer<'_> {
     #[allow(static_mut_refs)]
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
         let fuzzer_state = &self.0;
-        let test = fuzzer_state.state.unwrap();
+        let test = fuzzer_state.state.as_ref().unwrap();
 
         let bytes: Vec<u8> = input.into();
         let result = test.execute_ingress(
@@ -230,7 +150,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer<'_> {
     #[allow(static_mut_refs)]
     fn set_coverage_map(&self) {
         let fuzzer_state = &self.0;
-        let test = fuzzer_state.state.unwrap();
+        let test = fuzzer_state.state.as_ref().unwrap();
         let result = test.query(
             fuzzer_state.get_cansiter_id_by_name("decode_candid"),
             "export_coverage",
@@ -244,4 +164,87 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer<'_> {
     fn get_coverage_map(&self) -> &mut [u8] {
         unsafe { COVERAGE_MAP }
     }
+}
+
+fn run<T>(mut orchestrator: T)
+where
+    T: FuzzerOrchestrator,
+{
+    orchestrator.init();
+
+    let mut harness = |input: &BytesInput| {
+        orchestrator.setup();
+        let result = orchestrator.execute(input.clone());
+        orchestrator.set_coverage_map();
+        orchestrator.cleanup();
+        result
+    };
+
+    let decoding_map_observer = unsafe {
+        RefCellValueObserver::new(
+            DECODING_MAP_OBSERVER_NAME,
+            libafl_bolts::ownedref::OwnedRef::from_ptr(addr_of!(MAP)),
+        )
+    };
+
+    let decoding_feedback = DecodingMapFeedback::new();
+    let hitcount_map_observer =
+        HitcountsMapObserver::new(unsafe { StdMapObserver::new("coverage_map", COVERAGE_MAP) });
+    let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
+    let mut feedback = feedback_or!(decoding_feedback, afl_map_feedback);
+    let mut objective = CrashFeedback::new();
+
+    let mut state = StdState::new(
+        StdRand::with_seed(current_nanos()),
+        InMemoryOnDiskCorpus::no_meta(orchestrator.input_dir()).unwrap(),
+        InMemoryOnDiskCorpus::no_meta(orchestrator.crashes_dir()).unwrap(),
+        &mut feedback,
+        &mut objective,
+    )
+    .unwrap();
+
+    let mon = SimpleMonitor::new(|s| println!("{s}"));
+
+    // let ui = TuiUI::with_version(
+    //     String::from("Decode Candid by Instruction / Input Ratio"),
+    //     String::from("0.0.1"),
+    //     false,
+    // );
+    // let mon = TuiMonitor::new(ui);
+
+    let mut mgr = SimpleEventManager::new(mon);
+    let scheduler = QueueScheduler::new();
+    let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
+
+    let mut executor = InProcessExecutor::new(
+        &mut harness,
+        tuple_list!(hitcount_map_observer, decoding_map_observer),
+        &mut fuzzer,
+        &mut state,
+        &mut mgr,
+    )
+    .expect("Failed to create the Executor");
+
+    // bazel run @candid//:didc random -- -d gateway.did -t '(HttpResponse)' | bazel run @candid//:didc encode | xxd -r -p
+    let paths = fs::read_dir(orchestrator.corpus_dir()).unwrap();
+    for path in paths {
+        let p = path.unwrap().path();
+        let mut f = File::open(p.clone()).unwrap();
+        let mut buffer = Vec::new();
+        f.read_to_end(&mut buffer).unwrap();
+        fuzzer
+            .evaluate_input(
+                &mut state,
+                &mut executor,
+                &mut mgr,
+                &BytesInput::new(buffer),
+            )
+            .unwrap();
+    }
+
+    let mutator = HavocScheduledMutator::new(havoc_mutations());
+    let mut stages = tuple_list!(StdMutationalStage::new(mutator));
+    fuzzer
+        .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
+        .expect("Error in the fuzzing loop");
 }

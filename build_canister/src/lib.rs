@@ -1,5 +1,3 @@
-// fuzzers/decode_candid_by_instructions/build.rs
-
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -38,7 +36,7 @@ pub fn build_canisters(canisters: Vec<CanisterBuildOpts>) {
 fn build_canister(name: &str) -> PathBuf {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
-    let canister_path = workspace_root.join("canisters").join(name);
+    let canister_path = workspace_root.join("canisters").join("rust").join(name);
 
     println!(
         "cargo:rerun-if-changed={}/src/lib.rs",
@@ -51,15 +49,6 @@ fn build_canister(name: &str) -> PathBuf {
     println!(
         "cargo:rerun-if-changed={}/Cargo.toml",
         canister_path.display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}/instrumentation/src/main.rs",
-        workspace_root.display()
-    );
-
-    println!(
-        "cargo:rerun-if-changed={}/instrumentation/Cargo.toml",
-        workspace_root.display()
     );
 
     let cargo_bin = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
@@ -79,28 +68,7 @@ fn build_canister(name: &str) -> PathBuf {
         panic!("Failed to build canister '{name}'. Exit status: {status}");
     }
 
-    let wasm_path = get_build_dir().join(format!("{name}.wasm"));
-    let wasm_instrumented_path = get_build_dir().join(format!("{name}_instrumented.wasm"));
-
-    let status = Command::new(cargo_bin)
-        .arg("run")
-        .arg("--package")
-        .arg("instrumentation")
-        .arg("--bin")
-        .arg("instrumentation")
-        .arg("--release")
-        .arg("--target-dir")
-        .arg(get_target_dir().display().to_string())
-        .arg(wasm_path.display().to_string())
-        .arg(wasm_instrumented_path.display().to_string())
-        .status()
-        .unwrap_or_else(|_| panic!("Failed to execute cargo build for canister '{name}'"));
-
-    if !status.success() {
-        panic!("Failed to build canister '{name}'. Exit status: {status}");
-    }
-
-    wasm_instrumented_path
+    get_build_dir().join(format!("{name}.wasm"))
 }
 
 fn get_build_dir() -> PathBuf {
@@ -116,7 +84,7 @@ fn get_target_dir() -> PathBuf {
 fn build_motoko_canister(name: &str) -> PathBuf {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
-    let canister_root_path = workspace_root.join("motoko_canisters");
+    let canister_root_path = workspace_root.join("canisters").join("motoko");
 
     println!(
         "cargo:rerun-if-changed={}/mops.toml",
@@ -126,16 +94,6 @@ fn build_motoko_canister(name: &str) -> PathBuf {
     println!(
         "cargo:rerun-if-changed={}/main.mo",
         canister_root_path.join("src").join(name).display()
-    );
-
-    println!(
-        "cargo:rerun-if-changed={}/instrumentation/src/main.rs",
-        workspace_root.display()
-    );
-
-    println!(
-        "cargo:rerun-if-changed={}/instrumentation/Cargo.toml",
-        workspace_root.display()
     );
 
     assert!(std::env::set_current_dir(canister_root_path.clone()).is_ok());
@@ -151,34 +109,8 @@ fn build_motoko_canister(name: &str) -> PathBuf {
         panic!("Failed to build canister '{name}'. Exit status: {status}");
     }
 
-    let wasm_path = PathBuf::from(format!(
+    PathBuf::from(format!(
         "{}/.dfx/local/canisters/{name}/{name}.wasm",
         canister_root_path.display()
-    ));
-    let wasm_instrumented_path = PathBuf::from(format!(
-        "{}/.dfx/local/canisters/{name}/{name}_instrumented.wasm",
-        canister_root_path.display()
-    ));
-
-    let cargo_bin = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-
-    let status = Command::new(cargo_bin)
-        .arg("run")
-        .arg("--package")
-        .arg("instrumentation")
-        .arg("--bin")
-        .arg("instrumentation")
-        .arg("--release")
-        .arg("--target-dir")
-        .arg(get_target_dir().display().to_string())
-        .arg(wasm_path.display().to_string())
-        .arg(wasm_instrumented_path.display().to_string())
-        .status()
-        .unwrap_or_else(|_| panic!("Failed to execute cargo build for canister '{name}'"));
-
-    if !status.success() {
-        panic!("Failed to build canister '{name}'. Exit status: {status}");
-    }
-
-    wasm_instrumented_path
+    ))
 }

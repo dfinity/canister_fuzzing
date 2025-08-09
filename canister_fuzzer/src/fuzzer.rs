@@ -2,8 +2,8 @@ use ic_state_machine_tests::StateMachine;
 use ic_types::CanisterId;
 use std::path::PathBuf;
 
-pub struct FuzzerState<'a> {
-    pub state: Option<&'a StateMachine>,
+pub struct FuzzerState {
+    pub state: Option<StateMachine>,
     pub canisters: Vec<CanisterInfo>,
     pub fuzzer_dir: PathBuf,
 }
@@ -14,7 +14,7 @@ pub struct CanisterInfo {
     pub env_var: String,
 }
 
-impl FuzzerState<'_> {
+impl FuzzerState {
     pub fn get_cansiter_id_by_name(&self, name: &str) -> CanisterId {
         self.canisters
             .iter()

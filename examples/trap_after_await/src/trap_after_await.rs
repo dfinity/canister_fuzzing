@@ -4,46 +4,42 @@ use ic_types::PrincipalId;
 use ic_types::{ingress::WasmResult, Cycles};
 use libafl::executors::ExitKind;
 use libafl::inputs::ValueInput;
-use once_cell::sync::OnceCell;
-use sandbox_shim::sandbox_main;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
+use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
+use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::read_canister_bytes;
 
-static TEST: OnceCell<StateMachine> = OnceCell::new();
 static mut COVERAGE_MAP: &mut [u8] = &mut [0; 65536];
 const SYNCHRONOUS_EXECUTION: bool = false;
 
 fn main() {
-    fn shim() {
-        let fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState {
-            state: None,
-            canisters: vec![
-                CanisterInfo {
-                    id: None,
-                    name: "ledger".to_string(),
-                    env_var: "LEDGER_WASM_PATH".to_string(),
-                },
-                CanisterInfo {
-                    id: None,
-                    name: "transfer".to_string(),
-                    env_var: "TRANSFER_WASM_PATH".to_string(),
-                },
-            ],
-            fuzzer_dir: PathBuf::from("fuzzers/trap_after_await"),
-        });
+    let fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState {
+        state: None,
+        canisters: vec![
+            CanisterInfo {
+                id: None,
+                name: "ledger".to_string(),
+                env_var: "LEDGER_WASM_PATH".to_string(),
+            },
+            CanisterInfo {
+                id: None,
+                name: "transfer".to_string(),
+                env_var: "TRANSFER_WASM_PATH".to_string(),
+            },
+        ],
+        fuzzer_dir: PathBuf::from("examples/trap_after_await"),
+    });
 
-        orchestrator::run(fuzzer_state);
-    }
-    sandbox_main(shim);
+    sandbox_main(orchestrator::run, fuzzer_state);
 }
 
-struct TrapAfterAwaitFuzzer<'a>(FuzzerState<'a>);
+struct TrapAfterAwaitFuzzer(FuzzerState);
 
-impl FuzzerOrchestrator for TrapAfterAwaitFuzzer<'_> {
+impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     fn init(&mut self) {
         let (test, _) = two_subnets_simple();
 
@@ -54,22 +50,28 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer<'_> {
             std::mem::forget(test);
             value
         };
-        assert!(TEST.set(stolen_value).is_ok());
-        let fuzzer_state = &mut self.0;
-        fuzzer_state.state = TEST.get();
 
-        let module = read_canister_bytes(&fuzzer_state.get_cansiter_env_by_name("ledger"));
+        let fuzzer_state = &mut self.0;
+        fuzzer_state.state = Some(stolen_value);
+
+        let module = instrument_wasm_for_fuzzing(&read_canister_bytes(
+            &fuzzer_state.get_cansiter_env_by_name("ledger"),
+        ));
 
         let ledger_canister_id = fuzzer_state
             .state
+            .as_ref()
             .unwrap()
             .install_canister_with_cycles(module, vec![], None, Cycles::new(u128::MAX / 2))
             .unwrap();
 
-        let module = read_canister_bytes(&fuzzer_state.get_cansiter_env_by_name("transfer"));
+        let module = instrument_wasm_for_fuzzing(&read_canister_bytes(
+            &fuzzer_state.get_cansiter_env_by_name("transfer"),
+        ));
 
         let main_canister_id = fuzzer_state
             .state
+            .as_ref()
             .unwrap()
             .install_canister_with_cycles(
                 module,
@@ -87,7 +89,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer<'_> {
 
     fn setup(&self) {
         let fuzzer_state = &self.0;
-        let test = fuzzer_state.state.unwrap();
+        let test = fuzzer_state.state.as_ref().unwrap();
         let main_canister_id = fuzzer_state.get_cansiter_id_by_name("transfer");
         let ledger_canister_id = fuzzer_state.get_cansiter_id_by_name("ledger");
 
@@ -129,7 +131,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer<'_> {
 
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
         let fuzzer_state = &self.0;
-        let test = fuzzer_state.state.unwrap();
+        let test = fuzzer_state.state.as_ref().unwrap();
         let main_canister_id = fuzzer_state.get_cansiter_id_by_name("transfer");
         let ledger_canister_id = fuzzer_state.get_cansiter_id_by_name("ledger");
 
@@ -214,7 +216,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer<'_> {
     #[allow(static_mut_refs)]
     fn set_coverage_map(&self) {
         let fuzzer_state = &self.0;
-        let test = fuzzer_state.state.unwrap();
+        let test = fuzzer_state.state.as_ref().unwrap();
         let result = test.query(
             fuzzer_state.get_cansiter_id_by_name("transfer"),
             "export_coverage",

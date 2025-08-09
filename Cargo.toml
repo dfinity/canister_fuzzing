@@ -1,17 +1,15 @@
 [workspace]
 
 members = [
-    "canisters/decode_candid",
-    "canisters/ledger",
-    "canisters/transfer",
-    "canisters/stable_memory",
-    "fuzzers/decode_candid_by_instructions",
-    "fuzzers/trap_after_await",
-    "fuzzers/stable_memory_ops",
-    "fuzzers/motoko_shim",
-    "fuzzers/motoko_diff",
-    "instrumentation",
-    "sandbox_shim",
+    "canisters/rust/decode_candid",
+    "canisters/rust/ledger",
+    "canisters/rust/transfer",
+    "canisters/rust/stable_memory",
+    "examples/decode_candid_by_instructions",
+    "examples/trap_after_await",
+    "examples/stable_memory_ops",
+    "examples/motoko_shim",
+    "examples/motoko_diff",
     "build_canister",
     "canister_fuzzer",
 ]

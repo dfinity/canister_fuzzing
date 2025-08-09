@@ -4,9 +4,12 @@ use ic_canister_sandbox_backend_lib::{
     RUN_AS_SANDBOX_LAUNCHER_FLAG,
 };
 
-pub fn sandbox_main<F>(actual_main: F)
+use crate::orchestrator::FuzzerOrchestrator;
+
+pub fn sandbox_main<F, O>(mut actual_main: F, orchestrator: O)
 where
-    F: Fn(),
+    F: FnMut(O),
+    O: FuzzerOrchestrator,
 {
     if std::env::args().any(|arg| arg == RUN_AS_CANISTER_SANDBOX_FLAG) {
         canister_sandbox_main();
@@ -15,6 +18,6 @@ where
     } else if std::env::args().any(|arg| arg == RUN_AS_COMPILER_SANDBOX_FLAG) {
         compiler_sandbox_main();
     } else {
-        actual_main();
+        actual_main(orchestrator);
     }
 }

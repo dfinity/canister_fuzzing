@@ -1,8 +1,6 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use ic_wasm_transform::{Body, Global, Module};
 use rand::Rng;
-use std::env;
-use std::fs;
 use wasmparser::CompositeType;
 use wasmparser::{Export, ExternalKind, FuncType, Import, Operator, SubType, TypeRef, ValType};
 
@@ -10,34 +8,19 @@ use wasmparser::{Export, ExternalKind, FuncType, Import, Operator, SubType, Type
 const API_VERSION_IC0: &str = "ic0";
 const AFL_COVERAGE_MAP_SIZE: i32 = 65536;
 
-fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 3 {
-        bail!("Usage: {} <input.wasm> <output.wasm>", args[0]);
-    }
-    let input_path = &args[1];
-    let output_path = &args[2];
-
-    let wasm_bytes = fs::read(input_path)?;
-    println!("Successfully read Wasm file: {input_path}");
-
+pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8]) -> Vec<u8> {
     let mut module =
         Module::parse(&wasm_bytes, false).expect("Failed to parse module with ic-wasm-transform");
-    println!("Successfully parsed Wasm into high-level module representation.");
 
-    instrument_for_afl(&mut module)?;
-    println!("Instrumentation logic complete.");
+    instrument_for_afl(&mut module).expect("Unable to instrument wasm module for AFL");
 
     let instrumented_wasm = module
         .encode()
         .expect("Unable to encode module with ic-wasm-transform");
-    println!("Successfully re-encoded instrumented module.");
 
-    validate_wasm(&instrumented_wasm)?;
-    fs::write(output_path, instrumented_wasm)?;
-    println!("Validation successful. Output written to: {output_path}");
+    validate_wasm(&instrumented_wasm).expect("Wasm is not valid");
 
-    Ok(())
+    instrumented_wasm
 }
 
 fn instrument_for_afl(module: &mut Module<'_>) -> Result<()> {

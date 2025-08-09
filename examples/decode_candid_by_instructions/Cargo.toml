@@ -17,7 +17,6 @@ libafl = { workspace = true }
 libafl_bolts = { workspace = true }
 once_cell = { workspace = true }
 serde = { workspace = true }
-sandbox_shim = { path = "../../sandbox_shim/"}
 canister_fuzzer = { path = "../../canister_fuzzer/"}
 
 

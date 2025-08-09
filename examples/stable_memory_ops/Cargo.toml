@@ -1,22 +1,20 @@
 [package]
-name = "motoko_shim"
+name = "stable_memory_ops"
 version.workspace = true
 edition.workspace = true
 
 build = "build.rs"
 
 [[bin]]
-name = "motoko_shim"
-path = "src/motoko_shim.rs"
+name = "stable_memory_ops"
+path = "src/stable_memory_ops.rs"
 
 [dependencies]
 ic-state-machine-tests = { workspace = true }
 ic-types = { workspace = true }
-candid = { workspace = true }
 slog = { workspace = true }
 libafl = { workspace = true }
 once_cell = { workspace = true }
-sandbox_shim = { path = "../../sandbox_shim/"}
 canister_fuzzer = { path = "../../canister_fuzzer/"}
 
 [build-dependencies]

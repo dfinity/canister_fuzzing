@@ -774,15 +774,20 @@ dependencies = [
 name = "canister_fuzzer"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "candid",
  "ic-base-types",
+ "ic-canister-sandbox-backend-lib",
  "ic-state-machine-tests",
  "ic-types",
+ "ic-wasm-transform",
  "libafl",
  "libafl_bolts",
  "once_cell",
+ "rand 0.8.5",
  "serde",
  "slog",
+ "wasmparser 0.228.0",
 ]
 
 [[package]]
@@ -1519,7 +1524,6 @@ dependencies = [
  "libafl",
  "libafl_bolts",
  "once_cell",
- "sandbox_shim",
  "serde",
  "slog",
 ]
@@ -5057,16 +5061,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "instrumentation"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ic-wasm-transform",
- "rand 0.8.5",
- "wasmparser 0.228.0",
-]
-
-[[package]]
 name = "io-uring"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5739,8 +5733,6 @@ dependencies = [
  "ic-types",
  "k256",
  "libafl",
- "once_cell",
- "sandbox_shim",
  "sha2",
  "slog",
 ]
@@ -5755,8 +5747,6 @@ dependencies = [
  "ic-state-machine-tests",
  "ic-types",
  "libafl",
- "once_cell",
- "sandbox_shim",
  "slog",
 ]
 
@@ -7132,13 +7122,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sandbox_shim"
-version = "0.1.0"
-dependencies = [
- "ic-canister-sandbox-backend-lib",
-]
-
-[[package]]
 name = "scc"
 version = "2.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7648,7 +7631,6 @@ dependencies = [
  "ic-types",
  "libafl",
  "once_cell",
- "sandbox_shim",
  "slog",
 ]
 
@@ -8385,7 +8367,6 @@ dependencies = [
  "libafl",
  "libafl_bolts",
  "once_cell",
- "sandbox_shim",
  "serde",
  "slog",
 ]

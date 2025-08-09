@@ -1,6 +1,6 @@
 use candid::{Decode, Encode};
 use ic_state_machine_tests::ErrorCode;
-use ic_state_machine_tests::{StateMachine, StateMachineBuilder};
+use ic_state_machine_tests::StateMachineBuilder;
 use ic_types::{ingress::WasmResult, Cycles};
 use k256::elliptic_curve::PrimeField;
 use k256::{
@@ -9,8 +9,6 @@ use k256::{
 };
 use libafl::executors::ExitKind;
 use libafl::inputs::ValueInput;
-use once_cell::sync::OnceCell;
-use sandbox_shim::sandbox_main;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -18,45 +16,42 @@ use std::time::Duration;
 use slog::Level;
 
 use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
+use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
+use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::read_canister_bytes;
 
-static TEST: OnceCell<StateMachine> = OnceCell::new();
 static mut COVERAGE_MAP: &mut [u8] = &mut [0; 65536];
 
 fn main() {
-    fn shim() {
-        let fuzzer_state = MotokoDiffFuzzer(FuzzerState {
-            state: None,
-            canisters: vec![CanisterInfo {
-                id: None,
-                name: "ecdsa_sign".to_string(),
-                env_var: "MOTOKO_CANISTER_WASM_PATH".to_string(),
-            }],
-            fuzzer_dir: PathBuf::from("fuzzers/motoko_diff"),
-        });
-
-        orchestrator::run(fuzzer_state);
-    }
-    sandbox_main(shim);
+    let fuzzer_state = MotokoDiffFuzzer(FuzzerState {
+        state: None,
+        canisters: vec![CanisterInfo {
+            id: None,
+            name: "ecdsa_sign".to_string(),
+            env_var: "MOTOKO_CANISTER_WASM_PATH".to_string(),
+        }],
+        fuzzer_dir: PathBuf::from("examples/motoko_diff"),
+    });
+    sandbox_main(orchestrator::run, fuzzer_state);
 }
 
-struct MotokoDiffFuzzer<'a>(FuzzerState<'a>);
+struct MotokoDiffFuzzer(FuzzerState);
 
-impl FuzzerOrchestrator for MotokoDiffFuzzer<'_> {
+impl FuzzerOrchestrator for MotokoDiffFuzzer {
     fn init(&mut self) {
         let test = StateMachineBuilder::new()
             .with_log_level(Some(Level::Critical))
             .build();
 
-        assert!(TEST.set(test).is_ok());
         let fuzzer_state = &mut self.0;
-        fuzzer_state.state = TEST.get();
+        fuzzer_state.state = Some(test);
 
         for info in fuzzer_state.canisters.iter_mut() {
-            let module = read_canister_bytes(&info.env_var);
+            let module = instrument_wasm_for_fuzzing(&read_canister_bytes(&info.env_var));
             let canister_id = fuzzer_state
                 .state
+                .as_ref()
                 .unwrap()
                 .install_canister_with_cycles(module, vec![], None, Cycles::new(5_000_000_000_000))
                 .unwrap();
@@ -68,7 +63,7 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer<'_> {
 
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
         let fuzzer_state = &self.0;
-        let test = fuzzer_state.state.unwrap();
+        let test = fuzzer_state.state.as_ref().unwrap();
 
         let bytes: Vec<u8> = input.into();
         let mut key = [0u8; 32];
@@ -149,7 +144,7 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer<'_> {
     #[allow(static_mut_refs)]
     fn set_coverage_map(&self) {
         let fuzzer_state = &self.0;
-        let test = fuzzer_state.state.unwrap();
+        let test = fuzzer_state.state.as_ref().unwrap();
         let result = test.query(
             fuzzer_state.get_cansiter_id_by_name("ecdsa_sign"),
             "export_coverage",
