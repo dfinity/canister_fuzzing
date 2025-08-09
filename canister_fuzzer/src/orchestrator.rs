@@ -1,4 +1,7 @@
-use libafl::inputs::ValueInput;
+use libafl::{
+    inputs::ValueInput,
+    stages::{AflStatsStage, CalibrationStage},
+};
 use std::fs;
 use std::fs::File;
 use std::io::Read;
@@ -58,6 +61,12 @@ where
     let mut feedback = afl_map_feedback;
     let mut objective = CrashFeedback::new();
 
+    let calibration_stage = CalibrationStage::new(&feedback);
+    let stats_stage = AflStatsStage::builder()
+        .map_observer(&hitcount_map_observer)
+        .build()
+        .unwrap();
+
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
         InMemoryOnDiskCorpus::no_meta(orchestrator.input_dir()).unwrap(),
@@ -107,7 +116,11 @@ where
     }
 
     let mutator = HavocScheduledMutator::new(havoc_mutations());
-    let mut stages = tuple_list!(StdMutationalStage::new(mutator));
+    let mut stages = tuple_list!(
+        calibration_stage,
+        StdMutationalStage::new(mutator),
+        stats_stage
+    );
     fuzzer
         .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
         .expect("Error in the fuzzing loop");
