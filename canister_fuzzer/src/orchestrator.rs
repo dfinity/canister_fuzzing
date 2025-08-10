@@ -125,3 +125,14 @@ where
         .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
         .expect("Error in the fuzzing loop");
 }
+
+pub fn test_one_input<T>(mut orchestrator: T, bytes: Vec<u8>)
+where
+    T: FuzzerOrchestrator,
+{
+    orchestrator.init();
+    orchestrator.setup();
+    let result = orchestrator.execute(ValueInput::new(bytes));
+    orchestrator.cleanup();
+    println!("Execution result: {result:?}");
+}

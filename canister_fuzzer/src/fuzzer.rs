@@ -19,16 +19,16 @@ impl FuzzerState {
         self.canisters
             .iter()
             .find(|c| c.name == name)
-            .expect(format!("Canister {name} not found").as_str())
+            .unwrap_or_else(|| panic!("Canister {name} not found"))
             .id
-            .expect(format!("CanisterId is not initialized for {name}").as_str())
+            .unwrap_or_else(|| panic!("CanisterId is not initialized for {name}"))
     }
 
     pub fn get_cansiter_env_by_name(&self, name: &str) -> String {
         self.canisters
             .iter()
             .find(|c| c.name == name)
-            .expect(format!("Canister {name} not found").as_str())
+            .unwrap_or_else(|| panic!("Canister {name} not found"))
             .env_var
             .clone()
     }

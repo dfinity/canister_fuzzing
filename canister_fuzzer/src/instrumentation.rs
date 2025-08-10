@@ -10,7 +10,7 @@ const AFL_COVERAGE_MAP_SIZE: i32 = 65536;
 
 pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8]) -> Vec<u8> {
     let mut module =
-        Module::parse(&wasm_bytes, false).expect("Failed to parse module with ic-wasm-transform");
+        Module::parse(wasm_bytes, false).expect("Failed to parse module with ic-wasm-transform");
 
     instrument_for_afl(&mut module).expect("Unable to instrument wasm module for AFL");
 
