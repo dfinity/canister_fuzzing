@@ -16,8 +16,6 @@ mkdir -p "$PROJECT_NAME"/{corpus,crashes,input,src}
 touch "$PROJECT_NAME/Cargo.toml"
 touch "$PROJECT_NAME/build.rs"
 touch "$PROJECT_NAME/corpus/.gitignore"
-touch "$PROJECT_NAME/crashes/.gitignore"
-touch "$PROJECT_NAME/input/.gitignore"
 touch "$PROJECT_NAME/src/${PROJECT_NAME}.rs"
 
 echo "Project structure for '$PROJECT_NAME' created successfully."
