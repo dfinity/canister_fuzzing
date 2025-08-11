@@ -39,8 +39,6 @@ use libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
-static mut COVERAGE_MAP: &mut [u8] = &mut [0; 65536];
-
 fn main() {
     let fuzzer_state = DecodeCandidFuzzer(FuzzerState {
         state: None,
@@ -160,12 +158,12 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
             vec![],
         );
         if let Ok(WasmResult::Reply(result)) = result {
-            unsafe { COVERAGE_MAP.copy_from_slice(&result) };
+            self.0.set_coverage_map(&result);
         }
     }
 
     fn get_coverage_map(&self) -> &mut [u8] {
-        unsafe { COVERAGE_MAP }
+        self.0.get_mut_coverage_map()
     }
 }
 
@@ -191,8 +189,9 @@ where
     };
 
     let decoding_feedback = DecodingMapFeedback::new();
-    let hitcount_map_observer =
-        HitcountsMapObserver::new(unsafe { StdMapObserver::new("coverage_map", COVERAGE_MAP) });
+    let hitcount_map_observer = HitcountsMapObserver::new(unsafe {
+        StdMapObserver::new("coverage_map", orchestrator.get_coverage_map())
+    });
     let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
     let calibration_stage = CalibrationStage::new(&afl_map_feedback);
     let mut feedback = feedback_or!(decoding_feedback, afl_map_feedback);

@@ -4,9 +4,7 @@ use rand::Rng;
 use wasmparser::CompositeType;
 use wasmparser::{Export, ExternalKind, FuncType, Import, Operator, SubType, TypeRef, ValType};
 
-// Constants
-const API_VERSION_IC0: &str = "ic0";
-const AFL_COVERAGE_MAP_SIZE: i32 = 65536;
+use crate::constants::{AFL_COVERAGE_MAP_SIZE, API_VERSION_IC0};
 
 pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8]) -> Vec<u8> {
     let mut module =

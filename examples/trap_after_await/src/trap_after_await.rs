@@ -13,7 +13,6 @@ use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
 use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::read_canister_bytes;
 
-static mut COVERAGE_MAP: &mut [u8] = &mut [0; 65536];
 const SYNCHRONOUS_EXECUTION: bool = false;
 
 fn main() {
@@ -223,11 +222,11 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
             vec![],
         );
         if let Ok(WasmResult::Reply(result)) = result {
-            unsafe { COVERAGE_MAP.copy_from_slice(&result) };
+            self.0.set_coverage_map(&result);
         }
     }
 
     fn get_coverage_map(&self) -> &mut [u8] {
-        unsafe { COVERAGE_MAP }
+        self.0.get_mut_coverage_map()
     }
 }
