@@ -30,7 +30,7 @@ fn main() {
                 env_var: "TRANSFER_WASM_PATH".to_string(),
             },
         ],
-        fuzzer_dir: PathBuf::from("examples/trap_after_await"),
+        fuzzer_dir: "examples/trap_after_await".to_string(),
     });
 
     sandbox_main(orchestrator::run, fuzzer_state);
@@ -54,7 +54,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
         fuzzer_state.state = Some(stolen_value);
 
         let module = instrument_wasm_for_fuzzing(&read_canister_bytes(
-            &fuzzer_state.get_cansiter_env_by_name("ledger"),
+            &fuzzer_state.get_canister_env_by_name("ledger"),
         ));
 
         let ledger_canister_id = fuzzer_state
@@ -65,7 +65,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
             .unwrap();
 
         let module = instrument_wasm_for_fuzzing(&read_canister_bytes(
-            &fuzzer_state.get_cansiter_env_by_name("transfer"),
+            &fuzzer_state.get_canister_env_by_name("transfer"),
         ));
 
         let main_canister_id = fuzzer_state
@@ -89,8 +89,8 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     fn setup(&self) {
         let fuzzer_state = &self.0;
         let test = fuzzer_state.state.as_ref().unwrap();
-        let main_canister_id = fuzzer_state.get_cansiter_id_by_name("transfer");
-        let ledger_canister_id = fuzzer_state.get_cansiter_id_by_name("ledger");
+        let main_canister_id = fuzzer_state.get_canister_id_by_name("transfer");
+        let ledger_canister_id = fuzzer_state.get_canister_id_by_name("ledger");
 
         // Prepare the main canister
         // Adds a local balance of 10_000_000 to anonymous principal
@@ -131,8 +131,8 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
         let fuzzer_state = &self.0;
         let test = fuzzer_state.state.as_ref().unwrap();
-        let main_canister_id = fuzzer_state.get_cansiter_id_by_name("transfer");
-        let ledger_canister_id = fuzzer_state.get_cansiter_id_by_name("ledger");
+        let main_canister_id = fuzzer_state.get_canister_id_by_name("transfer");
+        let ledger_canister_id = fuzzer_state.get_canister_id_by_name("ledger");
 
         let trap: Vec<u8> = input.into();
         // Initialize payload from bytes
@@ -201,15 +201,15 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     fn cleanup(&self) {}
 
     fn input_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("input")
+        self.0.input_dir()
     }
 
     fn crashes_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("crashes")
+        self.0.crashes_dir()
     }
 
     fn corpus_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("corpus")
+        self.0.corpus_dir()
     }
 
     #[allow(static_mut_refs)]
@@ -217,7 +217,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
         let fuzzer_state = &self.0;
         let test = fuzzer_state.state.as_ref().unwrap();
         let result = test.query(
-            fuzzer_state.get_cansiter_id_by_name("transfer"),
+            fuzzer_state.get_canister_id_by_name("transfer"),
             "export_coverage",
             vec![],
         );

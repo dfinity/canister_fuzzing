@@ -47,7 +47,7 @@ fn main() {
             name: "candid_decode".to_string(),
             env_var: "DECODE_CANDID_WASM_PATH".to_string(),
         }],
-        fuzzer_dir: PathBuf::from("examples/decode_candid_by_instructions"),
+        fuzzer_dir: "examples/decode_candid_by_instructions".to_string(),
     });
 
     sandbox_main(run, fuzzer_state);
@@ -84,7 +84,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
 
         let bytes: Vec<u8> = input.into();
         let result = test.execute_ingress(
-            fuzzer_state.get_cansiter_id_by_name("candid_decode"),
+            fuzzer_state.get_canister_id_by_name("candid_decode"),
             "parse_candid",
             Encode!(&bytes).unwrap(),
         );
@@ -137,15 +137,15 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
     fn cleanup(&self) {}
 
     fn input_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("input")
+        self.0.input_dir()
     }
 
     fn crashes_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("crashes")
+        self.0.crashes_dir()
     }
 
     fn corpus_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("corpus")
+        self.0.corpus_dir()
     }
 
     #[allow(static_mut_refs)]
@@ -153,7 +153,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let fuzzer_state = &self.0;
         let test = fuzzer_state.state.as_ref().unwrap();
         let result = test.query(
-            fuzzer_state.get_cansiter_id_by_name("candid_decode"),
+            fuzzer_state.get_canister_id_by_name("candid_decode"),
             "export_coverage",
             vec![],
         );

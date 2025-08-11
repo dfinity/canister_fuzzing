@@ -22,3 +22,4 @@ serde = { workspace = true }
 wasmparser = { workspace = true }
 rand = { workspace = true }
 anyhow = { workspace = true }
+chrono = { workspace = true }

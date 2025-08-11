@@ -29,7 +29,7 @@ fn main() {
             name: "ecdsa_sign".to_string(),
             env_var: "MOTOKO_CANISTER_WASM_PATH".to_string(),
         }],
-        fuzzer_dir: PathBuf::from("examples/motoko_diff"),
+        fuzzer_dir: "examples/motoko_diff".to_string(),
     });
     sandbox_main(orchestrator::run, fuzzer_state);
 }
@@ -74,7 +74,7 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         let b = digest.as_slice().to_vec();
         let payload = candid::Encode!(&b, &key, &k).unwrap();
         let result = test.execute_ingress(
-            fuzzer_state.get_cansiter_id_by_name("ecdsa_sign"),
+            fuzzer_state.get_canister_id_by_name("ecdsa_sign"),
             "sign_ecdsa",
             payload,
         );
@@ -86,7 +86,7 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         // let digest = hasher.finalize();
         // let b = digest.as_slice().to_vec();
         // let payload = candid::Encode!(&bytes).unwrap();
-        // let result = test.execute_ingress(fuzzer_state.get_cansiter_id_by_name("ecdsa_sign"), "sign_ecdsa", payload);
+        // let result = test.execute_ingress(fuzzer_state.get_canister_id_by_name("ecdsa_sign"), "sign_ecdsa", payload);
 
         let exit_status = match result {
             Ok(WasmResult::Reply(bytes)) => {
@@ -128,15 +128,15 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
     fn cleanup(&self) {}
 
     fn input_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("input")
+        self.0.input_dir()
     }
 
     fn crashes_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("crashes")
+        self.0.crashes_dir()
     }
 
     fn corpus_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("corpus")
+        self.0.corpus_dir()
     }
 
     #[allow(static_mut_refs)]
@@ -144,7 +144,7 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         let fuzzer_state = &self.0;
         let test = fuzzer_state.state.as_ref().unwrap();
         let result = test.query(
-            fuzzer_state.get_cansiter_id_by_name("ecdsa_sign"),
+            fuzzer_state.get_canister_id_by_name("ecdsa_sign"),
             "export_coverage",
             vec![],
         );

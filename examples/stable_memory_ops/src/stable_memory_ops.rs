@@ -22,7 +22,7 @@ fn main() {
             name: "stable_memory".to_string(),
             env_var: "STABLE_MEMORY_WASM_PATH".to_string(),
         }],
-        fuzzer_dir: PathBuf::from("examples/stable_memory_ops"),
+        fuzzer_dir: "examples/stable_memory_ops".to_string(),
     });
 
     sandbox_main(orchestrator::run, fuzzer_state);
@@ -59,7 +59,7 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
 
         let bytes: Vec<u8> = input.into();
         let result = test.execute_ingress(
-            fuzzer_state.get_cansiter_id_by_name("stable_memory"),
+            fuzzer_state.get_canister_id_by_name("stable_memory"),
             "stable_memory_ops",
             bytes,
         );
@@ -92,15 +92,15 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
     fn cleanup(&self) {}
 
     fn input_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("input")
+        self.0.input_dir()
     }
 
     fn crashes_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("crashes")
+        self.0.crashes_dir()
     }
 
     fn corpus_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("corpus")
+        self.0.corpus_dir()
     }
 
     #[allow(static_mut_refs)]
@@ -108,7 +108,7 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
         let fuzzer_state = &self.0;
         let test = fuzzer_state.state.as_ref().unwrap();
         let result = test.query(
-            fuzzer_state.get_cansiter_id_by_name("stable_memory"),
+            fuzzer_state.get_canister_id_by_name("stable_memory"),
             "export_coverage",
             vec![],
         );

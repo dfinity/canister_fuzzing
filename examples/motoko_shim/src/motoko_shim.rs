@@ -20,10 +20,10 @@ fn main() {
         state: None,
         canisters: vec![CanisterInfo {
             id: None,
-            name: "cbor_decode".to_string(),
+            name: "json_decode".to_string(),
             env_var: "MOTOKO_CANISTER_WASM_PATH".to_string(),
         }],
-        fuzzer_dir: PathBuf::from("examples/motoko_shim"),
+        fuzzer_dir: "examples/motoko_shim".to_string(),
     });
     sandbox_main(orchestrator::run, fuzzer_state);
 }
@@ -59,9 +59,9 @@ impl FuzzerOrchestrator for MotokoShimFuzzer {
 
         let bytes: Vec<u8> = input.into();
         let result = test.execute_ingress(
-            fuzzer_state.get_cansiter_id_by_name("cbor_decode"),
-            "parse_cbor",
-            Encode!(&bytes).unwrap(),
+            fuzzer_state.get_canister_id_by_name("json_decode"),
+            "parse_json",
+            Encode!(&String::from_utf8_lossy(&bytes)).unwrap(),
         );
 
         let exit_status = match result {
@@ -92,15 +92,15 @@ impl FuzzerOrchestrator for MotokoShimFuzzer {
     fn cleanup(&self) {}
 
     fn input_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("input")
+        self.0.input_dir()
     }
 
     fn crashes_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("crashes")
+        self.0.crashes_dir()
     }
 
     fn corpus_dir(&self) -> PathBuf {
-        self.0.get_root_dir().join("corpus")
+        self.0.corpus_dir()
     }
 
     #[allow(static_mut_refs)]
@@ -108,7 +108,7 @@ impl FuzzerOrchestrator for MotokoShimFuzzer {
         let fuzzer_state = &self.0;
         let test = fuzzer_state.state.as_ref().unwrap();
         let result = test.query(
-            fuzzer_state.get_cansiter_id_by_name("cbor_decode"),
+            fuzzer_state.get_canister_id_by_name("json_decode"),
             "export_coverage",
             vec![],
         );

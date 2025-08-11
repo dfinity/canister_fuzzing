@@ -15,6 +15,10 @@
     "ecdsa_sign": {
       "main": "src/ecdsa_sign/main.mo",
       "type": "motoko"
+    },
+    "json_decode": {
+      "main": "src/json_decode/main.mo",
+      "type": "motoko"
     }
   },
   "defaults": {
