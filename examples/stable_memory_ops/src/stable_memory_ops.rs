@@ -22,7 +22,7 @@ fn main() {
         "examples/stable_memory_ops".to_string(),
     ));
 
-    sandbox_main(|| { fuzzer_state.run() });
+    sandbox_main(|| fuzzer_state.run());
 }
 
 struct StableMemoryFuzzer(FuzzerState);

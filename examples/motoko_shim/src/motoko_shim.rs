@@ -23,7 +23,7 @@ fn main() {
         }],
         "examples/motoko_shim".to_string(),
     ));
-    sandbox_main(|| { fuzzer_state.run() });
+    sandbox_main(|| fuzzer_state.run());
 }
 
 struct MotokoShimFuzzer(FuzzerState);

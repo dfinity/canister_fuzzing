@@ -49,7 +49,7 @@ fn main() {
         "examples/decode_candid_by_instructions".to_string(),
     ));
 
-    sandbox_main(|| { fuzzer_state.run() });
+    sandbox_main(|| fuzzer_state.run());
 }
 
 struct DecodeCandidFuzzer(FuzzerState);
@@ -137,7 +137,6 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
     }
 
     fn cleanup(&self) {}
-
 
     fn run(&mut self) {
         self.init();
@@ -229,5 +228,4 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
             .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
             .expect("Error in the fuzzing loop");
     }
-
 }

@@ -21,19 +21,19 @@ fn main() {
                 id: None,
                 name: "ledger".to_string(),
                 env_var: "LEDGER_WASM_PATH".to_string(),
-                ty: CanisterType::Coverage,
+                ty: CanisterType::Support,
             },
             CanisterInfo {
                 id: None,
                 name: "transfer".to_string(),
                 env_var: "TRANSFER_WASM_PATH".to_string(),
-                ty: CanisterType::Support,
+                ty: CanisterType::Coverage,
             },
         ],
         "examples/trap_after_await".to_string(),
     ));
 
-    sandbox_main(|| { fuzzer_state.run() });
+    sandbox_main(|| fuzzer_state.run());
 }
 
 struct TrapAfterAwaitFuzzer(FuzzerState);

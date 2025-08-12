@@ -159,8 +159,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     /// This function sets up the `libafl` environment, including the executor,
     /// state, feedbacks, and mutators. It then loads the initial corpus and
     /// starts the fuzzing loop.
-    fn run(&mut self)
-    {
+    fn run(&mut self) {
         self.init();
 
         // The harness is a closure that `libafl` will call for each fuzzed input.
@@ -255,8 +254,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     ///
     /// * `orchestrator` - An implementation of the `FuzzerOrchestrator` trait.
     /// * `bytes` - The raw byte vector of the input to be tested.
-    fn test_one_input(&mut self, bytes: Vec<u8>)
-    {
+    fn test_one_input(&mut self, bytes: Vec<u8>) {
         self.init();
         self.setup();
         let result = self.execute(BytesInput::new(bytes));

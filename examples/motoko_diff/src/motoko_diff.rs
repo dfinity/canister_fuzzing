@@ -29,7 +29,7 @@ fn main() {
         }],
         "examples/motoko_diff".to_string(),
     ));
-    sandbox_main(|| { fuzzer_state.run() });
+    sandbox_main(|| fuzzer_state.run());
 }
 
 struct MotokoDiffFuzzer(FuzzerState);
