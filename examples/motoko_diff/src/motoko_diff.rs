@@ -1,6 +1,5 @@
 use candid::{Decode, Encode};
-use ic_state_machine_tests::{ErrorCode, StateMachine, StateMachineBuilder};
-use ic_types::CanisterId;
+use ic_state_machine_tests::{ErrorCode, StateMachineBuilder};
 use ic_types::{ingress::WasmResult, Cycles};
 use k256::elliptic_curve::PrimeField;
 use k256::{
@@ -16,13 +15,12 @@ use slog::Level;
 
 use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
-use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
+use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::read_canister_bytes;
-use std::sync::Arc;
 
 fn main() {
-    let fuzzer_state = MotokoDiffFuzzer(FuzzerState::new(
+    let mut fuzzer_state = MotokoDiffFuzzer(FuzzerState::new(
         vec![CanisterInfo {
             id: None,
             name: "ecdsa_sign".to_string(),
@@ -31,24 +29,18 @@ fn main() {
         }],
         "examples/motoko_diff".to_string(),
     ));
-    sandbox_main(orchestrator::run, fuzzer_state);
+    sandbox_main(|| { fuzzer_state.run() });
 }
 
 struct MotokoDiffFuzzer(FuzzerState);
 
+impl FuzzerStateProvider for MotokoDiffFuzzer {
+    fn get_fuzzer_state(&self) -> &FuzzerState {
+        &self.0
+    }
+}
+
 impl FuzzerOrchestrator for MotokoDiffFuzzer {
-    fn get_fuzzer_dir(&self) -> String {
-        self.0.get_fuzzer_dir().clone()
-    }
-
-    fn get_state_machine(&self) -> Arc<StateMachine> {
-        self.0.get_state_machine()
-    }
-
-    fn get_coverage_canister_id(&self) -> CanisterId {
-        self.0.get_coverage_canister_id()
-    }
-
     fn init(&mut self) {
         let test = StateMachineBuilder::new()
             .with_log_level(Some(Level::Critical))

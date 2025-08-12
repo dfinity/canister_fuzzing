@@ -12,7 +12,7 @@ pub struct FuzzerState {
     /// It's wrapped in an `Arc` to allow shared, thread-safe access.
     state: Option<Arc<StateMachine>>,
     /// A list of all canisters involved in the fuzzing setup.
-    pub canisters: Vec<CanisterInfo>,
+    canisters: Vec<CanisterInfo>,
     /// The name of the fuzzer-specific directory.
     fuzzer_dir: String,
 }

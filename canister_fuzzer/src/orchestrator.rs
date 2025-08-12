@@ -47,20 +47,15 @@ use crate::fuzzer::FuzzerState;
 /// Access to this map is carefully controlled within the fuzzing loop.
 static mut COVERAGE_MAP: &mut [u8] = &mut [0; AFL_COVERAGE_MAP_SIZE as usize];
 
+pub trait FuzzerStateProvider {
+    fn get_fuzzer_state(&self) -> &FuzzerState;
+}
+
 /// A trait that defines the necessary components for a canister fuzzing target.
 ///
 /// Implementors of this trait provide the specific logic for setting up the environment,
 /// executing a test case against one or more canisters, and cleaning up afterwards.
-pub trait FuzzerOrchestrator {
-    /// Returns the name of the specific directory for this fuzzer.
-    fn get_fuzzer_dir(&self) -> String;
-
-    /// Returns a thread-safe reference to the IC `StateMachine`.
-    fn get_state_machine(&self) -> Arc<StateMachine>;
-
-    /// Returns the `CanisterId` of the canister that has been instrumented for coverage.
-    fn get_coverage_canister_id(&self) -> CanisterId;
-
+pub trait FuzzerOrchestrator: FuzzerStateProvider {
     /// Performs one-time initialization at the start of the fuzzing campaign.
     /// This is where canisters are typically installed.
     fn init(&mut self);
@@ -83,6 +78,21 @@ pub trait FuzzerOrchestrator {
     /// Cleans up the environment after each execution.
     /// This could involve restoring the `StateMachine` from a snapshot.
     fn cleanup(&self);
+
+    /// Returns the name of the specific directory for this fuzzer.
+    fn get_fuzzer_dir(&self) -> String {
+        self.get_fuzzer_state().get_fuzzer_dir()
+    }
+
+    /// Returns a thread-safe reference to the IC `StateMachine`.
+    fn get_state_machine(&self) -> Arc<StateMachine> {
+        self.get_fuzzer_state().get_state_machine()
+    }
+
+    /// Returns the `CanisterId` of the canister that has been instrumented for coverage.
+    fn get_coverage_canister_id(&self) -> CanisterId {
+        self.get_fuzzer_state().get_coverage_canister_id()
+    }
 
     /// Creates and returns the path to the directory for storing new and interesting inputs.
     ///
@@ -143,122 +153,114 @@ pub trait FuzzerOrchestrator {
     fn get_coverage_map(&self) -> &'static mut [u8] {
         unsafe { COVERAGE_MAP }
     }
-}
 
-/// The main entry point for running a fuzzing campaign.
-///
-/// This function sets up the `libafl` environment, including the executor,
-/// state, feedbacks, and mutators. It then loads the initial corpus and
-/// starts the fuzzing loop.
-///
-/// # Arguments
-///
-/// * `orchestrator` - An implementation of the `FuzzerOrchestrator` trait that defines the fuzzing target.
-pub fn run<T>(mut orchestrator: T)
-where
-    T: FuzzerOrchestrator,
-{
-    orchestrator.init();
+    /// The main entry point for running a fuzzing campaign.
+    ///
+    /// This function sets up the `libafl` environment, including the executor,
+    /// state, feedbacks, and mutators. It then loads the initial corpus and
+    /// starts the fuzzing loop.
+    fn run(&mut self)
+    {
+        self.init();
 
-    // The harness is a closure that `libafl` will call for each fuzzed input.
-    let mut harness = |input: &BytesInput| {
-        orchestrator.setup();
-        let result = orchestrator.execute(input.clone());
-        orchestrator.set_coverage_map();
-        orchestrator.cleanup();
-        result
-    };
+        // The harness is a closure that `libafl` will call for each fuzzed input.
+        let mut harness = |input: &BytesInput| {
+            self.setup();
+            let result = self.execute(input.clone());
+            self.set_coverage_map();
+            self.cleanup();
+            result
+        };
 
-    let hitcount_map_observer = HitcountsMapObserver::new(unsafe {
-        StdMapObserver::new("coverage_map", orchestrator.get_coverage_map())
-    });
+        let hitcount_map_observer = HitcountsMapObserver::new(unsafe {
+            StdMapObserver::new("coverage_map", self.get_coverage_map())
+        });
 
-    // Feedback mechanisms tell the fuzzer if an input is "interesting"
-    let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
-    let mut feedback = afl_map_feedback;
-    let calibration_stage = CalibrationStage::new(&feedback);
-    // The objective is to find crashes
-    let mut objective = CrashFeedback::new();
+        // Feedback mechanisms tell the fuzzer if an input is "interesting"
+        let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
+        let mut feedback = afl_map_feedback;
+        let calibration_stage = CalibrationStage::new(&feedback);
+        // The objective is to find crashes
+        let mut objective = CrashFeedback::new();
 
-    // A stats stage to print statistics about the fuzzing run.
-    let stats_stage = AflStatsStage::builder()
-        .map_observer(&hitcount_map_observer)
-        .build()
+        // A stats stage to print statistics about the fuzzing run.
+        let stats_stage = AflStatsStage::builder()
+            .map_observer(&hitcount_map_observer)
+            .build()
+            .unwrap();
+
+        let mut state = StdState::new(
+            StdRand::with_seed(current_nanos()),
+            InMemoryOnDiskCorpus::new(self.input_dir()).unwrap(),
+            InMemoryOnDiskCorpus::no_meta(self.crashes_dir()).unwrap(),
+            &mut feedback,
+            &mut objective,
+        )
         .unwrap();
 
-    let mut state = StdState::new(
-        StdRand::with_seed(current_nanos()),
-        InMemoryOnDiskCorpus::new(orchestrator.input_dir()).unwrap(),
-        InMemoryOnDiskCorpus::no_meta(orchestrator.crashes_dir()).unwrap(),
-        &mut feedback,
-        &mut objective,
-    )
-    .unwrap();
+        let mon = SimpleMonitor::new(|s| println!("{s}"));
+        // A TUI monitor can be used for a more sophisticated display.
+        // Example:
+        // let ui = TuiUI::with_version(String::from("My Fuzzer"), String::from("0.1.0"), false);
+        // let mon = TuiMonitor::new(ui);
+        let mut mgr = SimpleEventManager::new(mon);
+        let scheduler = QueueScheduler::new();
+        let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
 
-    let mon = SimpleMonitor::new(|s| println!("{s}"));
-    // A TUI monitor can be used for a more sophisticated display.
-    // Example:
-    // let ui = TuiUI::with_version(String::from("My Fuzzer"), String::from("0.1.0"), false);
-    // let mon = TuiMonitor::new(ui);
-    let mut mgr = SimpleEventManager::new(mon);
-    let scheduler = QueueScheduler::new();
-    let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
+        let mut executor = InProcessExecutor::new(
+            &mut harness,
+            tuple_list!(hitcount_map_observer),
+            &mut fuzzer,
+            &mut state,
+            &mut mgr,
+        )
+        .expect("Failed to create the Executor");
 
-    let mut executor = InProcessExecutor::new(
-        &mut harness,
-        tuple_list!(hitcount_map_observer),
-        &mut fuzzer,
-        &mut state,
-        &mut mgr,
-    )
-    .expect("Failed to create the Executor");
+        // Load initial inputs from the corpus directory
+        let paths = fs::read_dir(self.corpus_dir()).unwrap();
+        for path in paths {
+            let p = path.unwrap().path();
+            let mut f = File::open(p.clone()).unwrap();
+            let mut buffer = Vec::new();
+            f.read_to_end(&mut buffer).unwrap();
+            fuzzer
+                .evaluate_input(
+                    &mut state,
+                    &mut executor,
+                    &mut mgr,
+                    &BytesInput::new(buffer),
+                )
+                .unwrap();
+        }
+        // Standard mutational stage with a havoc mutator
+        let mutator = HavocScheduledMutator::new(havoc_mutations());
+        let mut stages = tuple_list!(
+            calibration_stage,
+            StdMutationalStage::new(mutator),
+            stats_stage
+        );
 
-    // Load initial inputs from the corpus directory
-    let paths = fs::read_dir(orchestrator.corpus_dir()).unwrap();
-    for path in paths {
-        let p = path.unwrap().path();
-        let mut f = File::open(p.clone()).unwrap();
-        let mut buffer = Vec::new();
-        f.read_to_end(&mut buffer).unwrap();
+        // Start the fuzzing loop!
         fuzzer
-            .evaluate_input(
-                &mut state,
-                &mut executor,
-                &mut mgr,
-                &BytesInput::new(buffer),
-            )
-            .unwrap();
+            .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
+            .expect("Error in the fuzzing loop");
     }
-    // Standard mutational stage with a havoc mutator
-    let mutator = HavocScheduledMutator::new(havoc_mutations());
-    let mut stages = tuple_list!(
-        calibration_stage,
-        StdMutationalStage::new(mutator),
-        stats_stage
-    );
 
-    // Start the fuzzing loop!
-    fuzzer
-        .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
-        .expect("Error in the fuzzing loop");
-}
-
-/// Executes a single input against the orchestrator's harness.
-///
-/// This function is useful for debugging specific inputs, such as those that
-/// have caused a crash, without running the full fuzzing loop.
-///
-/// # Arguments
-///
-/// * `orchestrator` - An implementation of the `FuzzerOrchestrator` trait.
-/// * `bytes` - The raw byte vector of the input to be tested.
-pub fn test_one_input<T>(mut orchestrator: T, bytes: Vec<u8>)
-where
-    T: FuzzerOrchestrator,
-{
-    orchestrator.init();
-    orchestrator.setup();
-    let result = orchestrator.execute(BytesInput::new(bytes));
-    orchestrator.cleanup();
-    println!("Execution result: {result:?}");
+    /// Executes a single input against the orchestrator's harness.
+    ///
+    /// This function is useful for debugging specific inputs, such as those that
+    /// have caused a crash, without running the full fuzzing loop.
+    ///
+    /// # Arguments
+    ///
+    /// * `orchestrator` - An implementation of the `FuzzerOrchestrator` trait.
+    /// * `bytes` - The raw byte vector of the input to be tested.
+    fn test_one_input(&mut self, bytes: Vec<u8>)
+    {
+        self.init();
+        self.setup();
+        let result = self.execute(BytesInput::new(bytes));
+        self.cleanup();
+        println!("Execution result: {result:?}");
+    }
 }

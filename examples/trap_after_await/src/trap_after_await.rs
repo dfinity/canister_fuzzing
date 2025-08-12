@@ -1,21 +1,21 @@
 use candid::{Decode, Encode};
 use ic_state_machine_tests::{two_subnets_simple, StateMachine};
+use ic_types::PrincipalId;
 use ic_types::{ingress::WasmResult, Cycles};
-use ic_types::{CanisterId, PrincipalId};
 use libafl::executors::ExitKind;
 use libafl::inputs::ValueInput;
 use std::sync::Arc;
 
 use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
-use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
+use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::read_canister_bytes;
 
 const SYNCHRONOUS_EXECUTION: bool = false;
 
 fn main() {
-    let fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState::new(
+    let mut fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState::new(
         vec![
             CanisterInfo {
                 id: None,
@@ -33,24 +33,18 @@ fn main() {
         "examples/trap_after_await".to_string(),
     ));
 
-    sandbox_main(orchestrator::run, fuzzer_state);
+    sandbox_main(|| { fuzzer_state.run() });
 }
 
 struct TrapAfterAwaitFuzzer(FuzzerState);
 
+impl FuzzerStateProvider for TrapAfterAwaitFuzzer {
+    fn get_fuzzer_state(&self) -> &FuzzerState {
+        &self.0
+    }
+}
+
 impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
-    fn get_fuzzer_dir(&self) -> String {
-        self.0.get_fuzzer_dir().clone()
-    }
-
-    fn get_state_machine(&self) -> Arc<StateMachine> {
-        self.0.get_state_machine()
-    }
-
-    fn get_coverage_canister_id(&self) -> CanisterId {
-        self.0.get_coverage_canister_id()
-    }
-
     fn init(&mut self) {
         let (test, _s) = two_subnets_simple();
 

@@ -1,21 +1,18 @@
-use ic_state_machine_tests::{ErrorCode, StateMachine, StateMachineBuilder};
-use ic_types::CanisterId;
+use ic_state_machine_tests::{ErrorCode, StateMachineBuilder};
 use ic_types::{ingress::WasmResult, Cycles};
 use libafl::executors::ExitKind;
 use libafl::inputs::ValueInput;
-use std::sync::Arc;
 use std::time::Duration;
 
 use slog::Level;
 
 use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
-use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
+use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::read_canister_bytes;
-
 fn main() {
-    let fuzzer_state = StableMemoryFuzzer(FuzzerState::new(
+    let mut fuzzer_state = StableMemoryFuzzer(FuzzerState::new(
         vec![CanisterInfo {
             id: None,
             name: "stable_memory".to_string(),
@@ -25,24 +22,18 @@ fn main() {
         "examples/stable_memory_ops".to_string(),
     ));
 
-    sandbox_main(orchestrator::run, fuzzer_state);
+    sandbox_main(|| { fuzzer_state.run() });
 }
 
 struct StableMemoryFuzzer(FuzzerState);
 
+impl FuzzerStateProvider for StableMemoryFuzzer {
+    fn get_fuzzer_state(&self) -> &FuzzerState {
+        &self.0
+    }
+}
+
 impl FuzzerOrchestrator for StableMemoryFuzzer {
-    fn get_fuzzer_dir(&self) -> String {
-        self.0.get_fuzzer_dir().clone()
-    }
-
-    fn get_state_machine(&self) -> Arc<StateMachine> {
-        self.0.get_state_machine()
-    }
-
-    fn get_coverage_canister_id(&self) -> CanisterId {
-        self.0.get_coverage_canister_id()
-    }
-
     fn init(&mut self) {
         let test = StateMachineBuilder::new()
             .with_log_level(Some(Level::Critical))
