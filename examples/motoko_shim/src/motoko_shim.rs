@@ -75,7 +75,7 @@ impl FuzzerOrchestrator for MotokoShimFuzzer {
             }
             Err(e) => match e.code() {
                 ErrorCode::CanisterTrapped | ErrorCode::CanisterCalledTrap => {
-                    println!("{e:?} result");
+                    println!("{e:?}");
                     ExitKind::Crash
                 }
                 _ => ExitKind::Ok,

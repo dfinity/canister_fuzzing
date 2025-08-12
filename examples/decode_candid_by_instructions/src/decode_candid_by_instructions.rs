@@ -104,7 +104,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
             }
             Err(e) => match e.code() {
                 ErrorCode::CanisterTrapped | ErrorCode::CanisterCalledTrap => {
-                    // println!("{e:?} result");
+                    // println!("{e:?}");
                     // return ExitKind::Ok;
                     0
                 }
