@@ -1,10 +1,9 @@
 use candid::{Decode, Encode};
 use ic_state_machine_tests::{two_subnets_simple, StateMachine};
-use ic_types::PrincipalId;
 use ic_types::{ingress::WasmResult, Cycles};
+use ic_types::{CanisterId, PrincipalId};
 use libafl::executors::ExitKind;
 use libafl::inputs::ValueInput;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
@@ -39,6 +38,18 @@ fn main() {
 struct TrapAfterAwaitFuzzer(FuzzerState);
 
 impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
+    fn get_fuzzer_dir(&self) -> String {
+        self.0.fuzzer_dir.clone()
+    }
+
+    fn get_state_machine(&self) -> &StateMachine {
+        &self.0.state.as_ref().unwrap()
+    }
+
+    fn get_coverage_canister_id(&self) -> CanisterId {
+        self.0.get_canister_id_by_name("transfer")
+    }
+
     fn init(&mut self) {
         let (test, _) = two_subnets_simple();
 
@@ -199,34 +210,4 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     }
 
     fn cleanup(&self) {}
-
-    fn input_dir(&self) -> PathBuf {
-        self.0.input_dir()
-    }
-
-    fn crashes_dir(&self) -> PathBuf {
-        self.0.crashes_dir()
-    }
-
-    fn corpus_dir(&self) -> PathBuf {
-        self.0.corpus_dir()
-    }
-
-    #[allow(static_mut_refs)]
-    fn set_coverage_map(&self) {
-        let fuzzer_state = &self.0;
-        let test = fuzzer_state.state.as_ref().unwrap();
-        let result = test.query(
-            fuzzer_state.get_canister_id_by_name("transfer"),
-            "export_coverage",
-            vec![],
-        );
-        if let Ok(WasmResult::Reply(result)) = result {
-            self.0.set_coverage_map(&result);
-        }
-    }
-
-    fn get_coverage_map(&self) -> &mut [u8] {
-        self.0.get_mut_coverage_map()
-    }
 }

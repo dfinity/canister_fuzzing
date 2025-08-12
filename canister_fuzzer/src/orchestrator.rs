@@ -1,3 +1,6 @@
+use chrono::Local;
+use ic_state_machine_tests::StateMachine;
+use ic_types::CanisterId;
 use libafl::{
     inputs::ValueInput,
     stages::{AflStatsStage, CalibrationStage},
@@ -22,22 +25,65 @@ use libafl::{
     Evaluator,
 };
 
+use ic_state_machine_tests::WasmResult;
 use libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
+use crate::constants::AFL_COVERAGE_MAP_SIZE;
+use crate::fuzzer::FuzzerState;
+static mut COVERAGE_MAP: &mut [u8] = &mut [0; AFL_COVERAGE_MAP_SIZE as usize];
+
 pub trait FuzzerOrchestrator {
+    fn get_fuzzer_dir(&self) -> String;
+    fn get_state_machine(&self) -> &StateMachine;
+    fn get_coverage_canister_id(&self) -> CanisterId;
+
     fn init(&mut self);
     fn setup(&self);
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind;
     fn cleanup(&self);
 
-    fn input_dir(&self) -> PathBuf;
-    fn crashes_dir(&self) -> PathBuf;
-    fn corpus_dir(&self) -> PathBuf;
+    fn input_dir(&self) -> PathBuf {
+        let input_dir = FuzzerState::get_target_dir()
+            .join("artifacts")
+            .join(self.get_fuzzer_dir().clone())
+            .join(Local::now().format("%Y%m%d_%H%M").to_string())
+            .join("input");
+        fs::create_dir_all(&input_dir).unwrap();
+        input_dir
+    }
 
-    fn set_coverage_map(&self);
-    fn get_coverage_map(&self) -> &mut [u8];
+    fn crashes_dir(&self) -> PathBuf {
+        let crashes_dir = FuzzerState::get_target_dir()
+            .join("artifacts")
+            .join(self.get_fuzzer_dir().clone())
+            .join(Local::now().format("%Y%m%d_%H%M").to_string())
+            .join("crashes");
+        fs::create_dir_all(&crashes_dir).unwrap();
+        crashes_dir
+    }
+
+    fn corpus_dir(&self) -> PathBuf {
+        FuzzerState::get_target_dir()
+            .parent()
+            .unwrap()
+            .join(self.get_fuzzer_dir().clone())
+            .join("corpus")
+    }
+
+    #[allow(static_mut_refs)]
+    fn set_coverage_map(&self) {
+        let test = self.get_state_machine();
+        let result = test.query(self.get_coverage_canister_id(), "export_coverage", vec![]);
+        if let Ok(WasmResult::Reply(result)) = result {
+            unsafe { COVERAGE_MAP.copy_from_slice(&result) };
+        }
+    }
+
+    fn get_coverage_map(&self) -> &'static mut [u8] {
+        unsafe { COVERAGE_MAP }
+    }
 }
 
 pub fn run<T>(mut orchestrator: T)
