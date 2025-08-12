@@ -6,7 +6,7 @@ use libafl::executors::ExitKind;
 use libafl::inputs::ValueInput;
 use std::sync::Arc;
 
-use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
+use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
 use canister_fuzzer::sandbox_shim::sandbox_main;
@@ -21,11 +21,13 @@ fn main() {
                 id: None,
                 name: "ledger".to_string(),
                 env_var: "LEDGER_WASM_PATH".to_string(),
+                ty: CanisterType::Coverage,
             },
             CanisterInfo {
                 id: None,
                 name: "transfer".to_string(),
                 env_var: "TRANSFER_WASM_PATH".to_string(),
+                ty: CanisterType::Support,
             },
         ],
         "examples/trap_after_await".to_string(),
@@ -46,7 +48,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     }
 
     fn get_coverage_canister_id(&self) -> CanisterId {
-        self.0.get_canister_id_by_name("transfer")
+        self.0.get_coverage_canister_id()
     }
 
     fn init(&mut self) {

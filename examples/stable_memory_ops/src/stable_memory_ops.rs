@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use slog::Level;
 
-use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
+use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
 use canister_fuzzer::sandbox_shim::sandbox_main;
@@ -20,6 +20,7 @@ fn main() {
             id: None,
             name: "stable_memory".to_string(),
             env_var: "STABLE_MEMORY_WASM_PATH".to_string(),
+            ty: CanisterType::Coverage,
         }],
         "examples/stable_memory_ops".to_string(),
     ));
@@ -39,7 +40,7 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
     }
 
     fn get_coverage_canister_id(&self) -> CanisterId {
-        self.0.get_canister_id_by_name("stable_memory")
+        self.0.get_coverage_canister_id()
     }
 
     fn init(&mut self) {

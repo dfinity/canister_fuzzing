@@ -14,7 +14,7 @@ use rand::Rng;
 use wasmparser::CompositeType;
 use wasmparser::{Export, ExternalKind, FuncType, Import, Operator, SubType, TypeRef, ValType};
 
-use crate::constants::{AFL_COVERAGE_MAP_SIZE, API_VERSION_IC0};
+use crate::constants::{AFL_COVERAGE_MAP_SIZE, API_VERSION_IC0, COVERAGE_FN_EXPORT_NAME};
 
 /// Instruments the given Wasm bytes for fuzzing.
 ///
@@ -94,7 +94,7 @@ fn inject_globals(module: &mut Module<'_>) -> (u32, u32) {
 /// and retrieve the coverage map. It uses the `ic0.msg_reply_data_append` and
 /// `ic0.msg_reply` System API calls to send the contents of the coverage map
 /// back to the caller.
-fn inject_afl_coverage_export(module: &mut Module<'_>, afl_mem_ptr_idx: u32) -> Result<()> {
+fn inject_afl_coverage_export<'a>(module: &mut Module<'a>, afl_mem_ptr_idx: u32) -> Result<()> {
     let (msg_reply_data_append_idx, msg_reply_idx) = ensure_ic0_imports(module)?;
 
     let ty = FuncType::new([], []);
@@ -122,8 +122,10 @@ fn inject_afl_coverage_export(module: &mut Module<'_>, afl_mem_ptr_idx: u32) -> 
     module.code_sections.push(func_body);
 
     let new_func_index = (module.imports.len() + module.functions.len() - 1) as u32;
+    let export_name = format!("canister_query {COVERAGE_FN_EXPORT_NAME}");
+    let name: &'static str = Box::leak(export_name.into_boxed_str());
     let export = Export {
-        name: "canister_query export_coverage",
+        name,
         kind: ExternalKind::Func,
         index: new_func_index,
     };

@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use slog::Level;
 
-use canister_fuzzer::fuzzer::{CanisterInfo, FuzzerState};
+use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
 use canister_fuzzer::sandbox_shim::sandbox_main;
@@ -21,6 +21,7 @@ fn main() {
             id: None,
             name: "json_decode".to_string(),
             env_var: "MOTOKO_CANISTER_WASM_PATH".to_string(),
+            ty: CanisterType::Coverage,
         }],
         "examples/motoko_shim".to_string(),
     ));
@@ -39,7 +40,7 @@ impl FuzzerOrchestrator for MotokoShimFuzzer {
     }
 
     fn get_coverage_canister_id(&self) -> CanisterId {
-        self.0.get_canister_id_by_name("json_decode")
+        self.0.get_coverage_canister_id()
     }
 
     fn init(&mut self) {

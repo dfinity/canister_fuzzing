@@ -13,7 +13,7 @@ pub struct FuzzerState {
     state: Option<Arc<StateMachine>>,
     /// A list of all canisters involved in the fuzzing setup.
     pub canisters: Vec<CanisterInfo>,
-    /// The name of the directory used to store artifacts for this specific fuzzer.
+    /// The name of the fuzzer-specific directory.
     fuzzer_dir: String,
 }
 
@@ -26,6 +26,13 @@ pub struct CanisterInfo {
     pub name: String,
     /// The name of the environment variable that holds the path to the canister's Wasm module.
     pub env_var: String,
+    pub ty: CanisterType,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum CanisterType {
+    Coverage,
+    Support,
 }
 
 impl FuzzerState {
@@ -36,11 +43,29 @@ impl FuzzerState {
     /// * `canisters` - A vector of `CanisterInfo` structs, one for each canister to be fuzzed.
     /// * `fuzzer_dir` - A string identifying the directory for this fuzzer's artifacts.
     pub fn new(canisters: Vec<CanisterInfo>, fuzzer_dir: String) -> Self {
+        assert!(
+            canisters
+                .iter()
+                .filter(|c| c.ty == CanisterType::Coverage)
+                .count()
+                == 1,
+            "Only one coverage canister is allowed"
+        );
         Self {
             state: None,
             canisters,
             fuzzer_dir,
         }
+    }
+
+    /// Returns the `CanisterId` of the coverage canister.
+    pub fn get_coverage_canister_id(&self) -> CanisterId {
+        self.canisters
+            .iter()
+            .find(|c| c.ty == CanisterType::Coverage)
+            .unwrap()
+            .id
+            .unwrap()
     }
 
     /// Initializes the state machine for the fuzzer.

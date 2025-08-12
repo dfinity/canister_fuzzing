@@ -33,7 +33,7 @@ use libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
-use crate::constants::AFL_COVERAGE_MAP_SIZE;
+use crate::constants::{AFL_COVERAGE_MAP_SIZE, COVERAGE_FN_EXPORT_NAME};
 use crate::fuzzer::FuzzerState;
 
 /// A global, mutable static array to hold the coverage map.
@@ -52,7 +52,7 @@ static mut COVERAGE_MAP: &mut [u8] = &mut [0; AFL_COVERAGE_MAP_SIZE as usize];
 /// Implementors of this trait provide the specific logic for setting up the environment,
 /// executing a test case against one or more canisters, and cleaning up afterwards.
 pub trait FuzzerOrchestrator {
-    /// Returns the name of the directory for this fuzzer.
+    /// Returns the name of the specific directory for this fuzzer.
     fn get_fuzzer_dir(&self) -> String;
 
     /// Returns a thread-safe reference to the IC `StateMachine`.
@@ -115,6 +115,7 @@ pub trait FuzzerOrchestrator {
     /// Returns the path to the seed corpus directory.
     ///
     /// This directory should contain initial valid inputs to kickstart the fuzzing process.
+    /// It is structured as <fuzzer_dir>/corpus
     fn corpus_dir(&self) -> PathBuf {
         FuzzerState::get_target_dir()
             .parent()
@@ -128,7 +129,11 @@ pub trait FuzzerOrchestrator {
     #[allow(static_mut_refs)]
     fn set_coverage_map(&self) {
         let test = self.get_state_machine();
-        let result = test.query(self.get_coverage_canister_id(), "export_coverage", vec![]);
+        let result = test.query(
+            self.get_coverage_canister_id(),
+            COVERAGE_FN_EXPORT_NAME,
+            vec![],
+        );
         if let Ok(WasmResult::Reply(result)) = result {
             unsafe { COVERAGE_MAP.copy_from_slice(&result) };
         }
