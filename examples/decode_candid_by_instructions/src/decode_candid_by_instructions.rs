@@ -18,6 +18,7 @@ use slog::Level;
 use std::fs::{self, File};
 use std::io::Read;
 use std::ptr::addr_of;
+use std::sync::Arc;
 use std::time::Duration;
 
 use libafl::{
@@ -40,15 +41,14 @@ use libafl::monitors::SimpleMonitor;
 use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
 fn main() {
-    let fuzzer_state = DecodeCandidFuzzer(FuzzerState {
-        state: None,
-        canisters: vec![CanisterInfo {
+    let fuzzer_state = DecodeCandidFuzzer(FuzzerState::new(
+        vec![CanisterInfo {
             id: None,
             name: "candid_decode".to_string(),
             env_var: "DECODE_CANDID_WASM_PATH".to_string(),
         }],
-        fuzzer_dir: "examples/decode_candid_by_instructions".to_string(),
-    });
+        "examples/decode_candid_by_instructions".to_string(),
+    ));
 
     sandbox_main(run, fuzzer_state);
 }
@@ -57,11 +57,11 @@ struct DecodeCandidFuzzer(FuzzerState);
 
 impl FuzzerOrchestrator for DecodeCandidFuzzer {
     fn get_fuzzer_dir(&self) -> String {
-        self.0.fuzzer_dir.clone()
+        self.0.get_fuzzer_dir().to_owned()
     }
 
-    fn get_state_machine(&self) -> &StateMachine {
-        &self.0.state.as_ref().unwrap()
+    fn get_state_machine(&self) -> Arc<StateMachine> {
+        self.0.get_state_machine()
     }
 
     fn get_coverage_canister_id(&self) -> CanisterId {
@@ -72,15 +72,13 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let test = StateMachineBuilder::new()
             .with_log_level(Some(Level::Critical))
             .build();
-        let fuzzer_state = &mut self.0;
-        fuzzer_state.state = Some(test);
 
-        for info in fuzzer_state.canisters.iter_mut() {
+        self.0.init_state(test);
+        let test = self.get_state_machine();
+
+        for info in self.0.get_iter_mut_canister_info() {
             let module = instrument_wasm_for_fuzzing(&read_canister_bytes(&info.env_var));
-            let canister_id = fuzzer_state
-                .state
-                .as_ref()
-                .unwrap()
+            let canister_id = test
                 .install_canister_with_cycles(module, vec![], None, Cycles::new(5_000_000_000_000))
                 .unwrap();
             info.id = Some(canister_id);

@@ -9,6 +9,7 @@ use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use libafl::{
     corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
@@ -36,7 +37,7 @@ static mut COVERAGE_MAP: &mut [u8] = &mut [0; AFL_COVERAGE_MAP_SIZE as usize];
 
 pub trait FuzzerOrchestrator {
     fn get_fuzzer_dir(&self) -> String;
-    fn get_state_machine(&self) -> &StateMachine;
+    fn get_state_machine(&self) -> Arc<StateMachine>;
     fn get_coverage_canister_id(&self) -> CanisterId;
 
     fn init(&mut self);

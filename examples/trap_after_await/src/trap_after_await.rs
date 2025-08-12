@@ -15,9 +15,8 @@ use canister_fuzzer::util::read_canister_bytes;
 const SYNCHRONOUS_EXECUTION: bool = false;
 
 fn main() {
-    let fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState {
-        state: None,
-        canisters: vec![
+    let fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState::new(
+        vec![
             CanisterInfo {
                 id: None,
                 name: "ledger".to_string(),
@@ -29,8 +28,8 @@ fn main() {
                 env_var: "TRANSFER_WASM_PATH".to_string(),
             },
         ],
-        fuzzer_dir: "examples/trap_after_await".to_string(),
-    });
+        "examples/trap_after_await".to_string(),
+    ));
 
     sandbox_main(orchestrator::run, fuzzer_state);
 }
@@ -39,11 +38,11 @@ struct TrapAfterAwaitFuzzer(FuzzerState);
 
 impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     fn get_fuzzer_dir(&self) -> String {
-        self.0.fuzzer_dir.clone()
+        self.0.get_fuzzer_dir().clone()
     }
 
-    fn get_state_machine(&self) -> &StateMachine {
-        &self.0.state.as_ref().unwrap()
+    fn get_state_machine(&self) -> Arc<StateMachine> {
+        self.0.get_state_machine()
     }
 
     fn get_coverage_canister_id(&self) -> CanisterId {
@@ -51,7 +50,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     }
 
     fn init(&mut self) {
-        let (test, _) = two_subnets_simple();
+        let (test, _s) = two_subnets_simple();
 
         // DANGERRR: It's unknwown why the strong ref count is 2 here.
         let stolen_value: StateMachine = unsafe {
@@ -61,28 +60,22 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
             value
         };
 
-        let fuzzer_state = &mut self.0;
-        fuzzer_state.state = Some(stolen_value);
+        self.0.init_state(stolen_value);
+        let test = self.get_state_machine();
 
         let module = instrument_wasm_for_fuzzing(&read_canister_bytes(
-            &fuzzer_state.get_canister_env_by_name("ledger"),
+            &self.0.get_canister_env_by_name("ledger"),
         ));
 
-        let ledger_canister_id = fuzzer_state
-            .state
-            .as_ref()
-            .unwrap()
+        let ledger_canister_id = test
             .install_canister_with_cycles(module, vec![], None, Cycles::new(u128::MAX / 2))
             .unwrap();
 
         let module = instrument_wasm_for_fuzzing(&read_canister_bytes(
-            &fuzzer_state.get_canister_env_by_name("transfer"),
+            &self.0.get_canister_env_by_name("transfer"),
         ));
 
-        let main_canister_id = fuzzer_state
-            .state
-            .as_ref()
-            .unwrap()
+        let main_canister_id = test
             .install_canister_with_cycles(
                 module,
                 Encode!(&ledger_canister_id).unwrap(),
@@ -92,34 +85,40 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
             .unwrap();
 
         let canisters = [ledger_canister_id, main_canister_id];
-        for (info, id) in fuzzer_state.canisters.iter_mut().zip(canisters) {
+        for (info, id) in self.0.get_iter_mut_canister_info().zip(canisters) {
             info.id = Some(id)
         }
     }
 
     fn setup(&self) {
-        let fuzzer_state = &self.0;
-        let test = fuzzer_state.state.as_ref().unwrap();
-        let main_canister_id = fuzzer_state.get_canister_id_by_name("transfer");
-        let ledger_canister_id = fuzzer_state.get_canister_id_by_name("ledger");
+        let test = self.get_state_machine();
+        let ledger_canister_id = self.0.get_canister_id_by_name("ledger");
 
         // Prepare the main canister
         // Adds a local balance of 10_000_000 to anonymous principal
-        test.execute_ingress(main_canister_id, "update_balance", Encode!().unwrap())
-            .unwrap();
+        test.execute_ingress(
+            self.get_coverage_canister_id(),
+            "update_balance",
+            Encode!().unwrap(),
+        )
+        .unwrap();
 
         // Prepare the ledger canister
         // Adds a ledger balance of 10_000_000 to main_canister_id
         test.execute_ingress(
             ledger_canister_id,
             "setup_balance",
-            Encode!(&main_canister_id, &10_000_000_u64).unwrap(),
+            Encode!(&self.get_coverage_canister_id(), &10_000_000_u64).unwrap(),
         )
         .unwrap();
 
         // Assert both balances match
         let b1 = match test
-            .query(main_canister_id, "get_total_balance", Encode!().unwrap())
+            .query(
+                self.get_coverage_canister_id(),
+                "get_total_balance",
+                Encode!().unwrap(),
+            )
             .unwrap()
         {
             WasmResult::Reply(result) => Decode!(&result, u64).unwrap(),
@@ -129,7 +128,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
         let b2 = match test.query(
             ledger_canister_id,
             "get_balance",
-            Encode!(&main_canister_id, &10_000_000_u64).unwrap(),
+            Encode!(&self.get_coverage_canister_id(), &10_000_000_u64).unwrap(),
         ) {
             Ok(WasmResult::Reply(result)) => Decode!(&result, u64).unwrap(),
             _ => panic!("Unable to get result"),
@@ -140,10 +139,8 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     }
 
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
-        let fuzzer_state = &self.0;
-        let test = fuzzer_state.state.as_ref().unwrap();
-        let main_canister_id = fuzzer_state.get_canister_id_by_name("transfer");
-        let ledger_canister_id = fuzzer_state.get_canister_id_by_name("ledger");
+        let test = self.get_state_machine();
+        let ledger_canister_id = self.0.get_canister_id_by_name("ledger");
 
         let trap: Vec<u8> = input.into();
         // Initialize payload from bytes
@@ -158,7 +155,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
                 // Execution result doesn't matter here
                 let _result = test.execute_ingress_as(
                     PrincipalId::new_anonymous(),
-                    main_canister_id,
+                    self.get_coverage_canister_id(),
                     "refund_balance",
                     trap.clone(),
                 );
@@ -171,7 +168,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
                 let _messaage_id = test
                     .submit_ingress_as(
                         PrincipalId::new_anonymous(),
-                        main_canister_id,
+                        self.get_coverage_canister_id(),
                         "refund_balance",
                         trap.clone(),
                     )
@@ -185,7 +182,11 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
 
         // Assert both balances match
         let b1 = match test
-            .query(main_canister_id, "get_total_balance", Encode!().unwrap())
+            .query(
+                self.get_coverage_canister_id(),
+                "get_total_balance",
+                Encode!().unwrap(),
+            )
             .unwrap()
         {
             WasmResult::Reply(result) => Decode!(&result, u64).unwrap(),
@@ -195,7 +196,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
         let b2 = match test.query(
             ledger_canister_id,
             "get_balance",
-            Encode!(&main_canister_id, &10_000_000_u64).unwrap(),
+            Encode!(&self.get_coverage_canister_id(), &10_000_000_u64).unwrap(),
         ) {
             Ok(WasmResult::Reply(result)) => Decode!(&result, u64).unwrap(),
             _ => panic!("Unable to get result"),

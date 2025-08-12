@@ -19,17 +19,17 @@ use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{self, FuzzerOrchestrator};
 use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::read_canister_bytes;
+use std::sync::Arc;
 
 fn main() {
-    let fuzzer_state = MotokoDiffFuzzer(FuzzerState {
-        state: None,
-        canisters: vec![CanisterInfo {
+    let fuzzer_state = MotokoDiffFuzzer(FuzzerState::new(
+        vec![CanisterInfo {
             id: None,
             name: "ecdsa_sign".to_string(),
             env_var: "MOTOKO_CANISTER_WASM_PATH".to_string(),
         }],
-        fuzzer_dir: "examples/motoko_diff".to_string(),
-    });
+        "examples/motoko_diff".to_string(),
+    ));
     sandbox_main(orchestrator::run, fuzzer_state);
 }
 
@@ -37,11 +37,11 @@ struct MotokoDiffFuzzer(FuzzerState);
 
 impl FuzzerOrchestrator for MotokoDiffFuzzer {
     fn get_fuzzer_dir(&self) -> String {
-        self.0.fuzzer_dir.clone()
+        self.0.get_fuzzer_dir().clone()
     }
 
-    fn get_state_machine(&self) -> &StateMachine {
-        &self.0.state.as_ref().unwrap()
+    fn get_state_machine(&self) -> Arc<StateMachine> {
+        self.0.get_state_machine()
     }
 
     fn get_coverage_canister_id(&self) -> CanisterId {
@@ -53,15 +53,12 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
             .with_log_level(Some(Level::Critical))
             .build();
 
-        let fuzzer_state = &mut self.0;
-        fuzzer_state.state = Some(test);
+        self.0.init_state(test);
+        let test = self.get_state_machine();
 
-        for info in fuzzer_state.canisters.iter_mut() {
+        for info in self.0.get_iter_mut_canister_info() {
             let module = instrument_wasm_for_fuzzing(&read_canister_bytes(&info.env_var));
-            let canister_id = fuzzer_state
-                .state
-                .as_ref()
-                .unwrap()
+            let canister_id = test
                 .install_canister_with_cycles(module, vec![], None, Cycles::new(5_000_000_000_000))
                 .unwrap();
             info.id = Some(canister_id);
