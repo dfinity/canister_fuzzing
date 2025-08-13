@@ -58,8 +58,6 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         }
     }
 
-    fn setup(&self) {}
-
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
         let test = self.get_state_machine();
 
@@ -120,6 +118,4 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         test.tick();
         exit_status
     }
-
-    fn cleanup(&self) {}
 }

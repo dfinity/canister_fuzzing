@@ -62,7 +62,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
 
     /// Sets up the environment before each execution of a test case.
     /// This could involve resetting canister state to a clean snapshot.
-    fn setup(&self);
+    fn setup(&self) {}
 
     /// Executes a single fuzzing input against the target canister(s).
     ///
@@ -77,7 +77,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
 
     /// Cleans up the environment after each execution.
     /// This could involve restoring the `StateMachine` from a snapshot.
-    fn cleanup(&self);
+    fn cleanup(&self) {}
 
     /// Returns the name of the specific directory for this fuzzer.
     fn get_fuzzer_dir(&self) -> String {

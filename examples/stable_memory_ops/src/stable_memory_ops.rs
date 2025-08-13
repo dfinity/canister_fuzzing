@@ -51,8 +51,6 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
         }
     }
 
-    fn setup(&self) {}
-
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
         let test = self.get_state_machine();
 
@@ -84,6 +82,4 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
 
         exit_status
     }
-
-    fn cleanup(&self) {}
 }

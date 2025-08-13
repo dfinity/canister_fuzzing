@@ -58,8 +58,13 @@ impl FuzzerState {
         }
     }
 
+    /// Initializes the state machine for the fuzzer.
+    pub fn init_state(&mut self, state: StateMachine) {
+        self.state = Some(Arc::new(state));
+    }
+
     /// Returns the `CanisterId` of the coverage canister.
-    pub fn get_coverage_canister_id(&self) -> CanisterId {
+    pub(crate) fn get_coverage_canister_id(&self) -> CanisterId {
         self.canisters
             .iter()
             .find(|c| c.ty == CanisterType::Coverage)
@@ -68,22 +73,17 @@ impl FuzzerState {
             .unwrap()
     }
 
-    /// Initializes the state machine for the fuzzer.
-    pub fn init_state(&mut self, state: StateMachine) {
-        self.state = Some(Arc::new(state));
-    }
-
     /// Returns a thread-safe reference to the state machine.
     ///
     /// # Panics
     ///
     /// Panics if the state machine has not been initialized via `init_state`.
-    pub fn get_state_machine(&self) -> Arc<StateMachine> {
+    pub(crate) fn get_state_machine(&self) -> Arc<StateMachine> {
         self.state.as_ref().unwrap().clone()
     }
 
     /// Returns the fuzzer-specific directory name.
-    pub fn get_fuzzer_dir(&self) -> String {
+    pub(crate) fn get_fuzzer_dir(&self) -> String {
         self.fuzzer_dir.clone()
     }
 

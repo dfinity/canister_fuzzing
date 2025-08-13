@@ -205,6 +205,4 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
         }
         ExitKind::Ok
     }
-
-    fn cleanup(&self) {}
 }

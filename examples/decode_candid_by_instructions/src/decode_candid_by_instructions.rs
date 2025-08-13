@@ -78,8 +78,6 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         }
     }
 
-    fn setup(&self) {}
-
     #[allow(static_mut_refs)]
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
         let test = self.get_state_machine();
@@ -135,8 +133,6 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         }
         ExitKind::Ok
     }
-
-    fn cleanup(&self) {}
 
     fn run(&mut self) {
         self.init();

@@ -52,8 +52,6 @@ impl FuzzerOrchestrator for MotokoShimFuzzer {
         }
     }
 
-    fn setup(&self) {}
-
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
         let test = self.get_state_machine();
         let bytes: Vec<u8> = input.into();
@@ -87,6 +85,4 @@ impl FuzzerOrchestrator for MotokoShimFuzzer {
 
         exit_status
     }
-
-    fn cleanup(&self) {}
 }
