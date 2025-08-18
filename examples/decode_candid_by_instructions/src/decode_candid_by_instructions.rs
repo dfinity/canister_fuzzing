@@ -3,11 +3,11 @@ use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::sandbox_shim::sandbox_main;
-use canister_fuzzer::util::read_canister_bytes;
+use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 use candid::{Decode, Encode};
-use ic_state_machine_tests::{ErrorCode, StateMachineBuilder};
-use ic_types::{ingress::WasmResult, Cycles};
+use ic_state_machine_tests::StateMachineBuilder;
+use ic_types::Cycles;
 use libafl::executors::ExitKind;
 use libafl::feedback_or;
 use libafl::inputs::ValueInput;
@@ -83,33 +83,16 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let test = self.get_state_machine();
 
         let bytes: Vec<u8> = input.into();
-        let result = test.execute_ingress(
+        let result = parse_canister_result_for_trap(test.execute_ingress(
             self.get_coverage_canister_id(),
             "parse_candid",
             Encode!(&bytes).unwrap(),
-        );
-        let instructions = match result {
-            Ok(WasmResult::Reply(result)) => {
-                // let mut instructions = [0u8; 8];
-                // instructions.clone_from_slice(&result[0..8]);
-                // u64::from_le_bytes(instructions)
-                Decode!(&result, u64).unwrap()
-            }
-            Ok(WasmResult::Reject(message)) => {
-                // Canister crashing is interesting
-                if message.contains("Canister trapped") {
-                    return ExitKind::Crash;
-                }
-                0
-            }
-            Err(e) => match e.code() {
-                ErrorCode::CanisterTrapped | ErrorCode::CanisterCalledTrap => {
-                    // println!("{e:?}");
-                    // return ExitKind::Ok;
-                    0
-                }
-                _ => 0,
-            },
+        ));
+
+        let instructions = if result.0 == ExitKind::Ok && result.1.is_some() {
+            Decode!(&result.1.unwrap(), u64).unwrap()
+        } else {
+            0
         };
 
         test.advance_time(Duration::from_secs(1));

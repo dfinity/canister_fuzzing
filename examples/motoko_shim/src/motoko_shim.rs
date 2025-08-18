@@ -1,6 +1,6 @@
 use candid::Encode;
-use ic_state_machine_tests::{ErrorCode, StateMachineBuilder};
-use ic_types::{ingress::WasmResult, Cycles};
+use ic_state_machine_tests::StateMachineBuilder;
+use ic_types::Cycles;
 use libafl::executors::ExitKind;
 use libafl::inputs::ValueInput;
 use std::time::Duration;
@@ -11,7 +11,7 @@ use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::sandbox_shim::sandbox_main;
-use canister_fuzzer::util::read_canister_bytes;
+use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 fn main() {
     let mut fuzzer_state = MotokoShimFuzzer(FuzzerState::new(
@@ -61,28 +61,11 @@ impl FuzzerOrchestrator for MotokoShimFuzzer {
             Encode!(&String::from_utf8_lossy(&bytes)).unwrap(),
         );
 
-        let exit_status = match result {
-            Ok(WasmResult::Reject(message)) => {
-                // Canister crashing is interesting
-                if message.contains("Canister trapped") {
-                    ExitKind::Crash
-                } else {
-                    ExitKind::Ok
-                }
-            }
-            Err(e) => match e.code() {
-                ErrorCode::CanisterTrapped | ErrorCode::CanisterCalledTrap => {
-                    println!("{e:?}");
-                    ExitKind::Crash
-                }
-                _ => ExitKind::Ok,
-            },
-            _ => ExitKind::Ok,
-        };
+        let exit_status = parse_canister_result_for_trap(result);
 
         test.advance_time(Duration::from_secs(1));
         test.tick();
 
-        exit_status
+        exit_status.0
     }
 }

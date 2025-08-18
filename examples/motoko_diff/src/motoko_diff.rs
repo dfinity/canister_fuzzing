@@ -1,6 +1,6 @@
 use candid::{Decode, Encode};
-use ic_state_machine_tests::{ErrorCode, StateMachineBuilder};
-use ic_types::{ingress::WasmResult, Cycles};
+use ic_state_machine_tests::StateMachineBuilder;
+use ic_types::Cycles;
 use k256::elliptic_curve::PrimeField;
 use k256::{
     ecdsa::{hazmat, Signature},
@@ -17,7 +17,7 @@ use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::sandbox_shim::sandbox_main;
-use canister_fuzzer::util::read_canister_bytes;
+use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 fn main() {
     let mut fuzzer_state = MotokoDiffFuzzer(FuzzerState::new(
@@ -71,7 +71,11 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         let digest = hasher.finalize();
         let b = digest.as_slice().to_vec();
         let payload = candid::Encode!(&b, &key, &k).unwrap();
-        let result = test.execute_ingress(self.get_coverage_canister_id(), "sign_ecdsa", payload);
+        let result = parse_canister_result_for_trap(test.execute_ingress(
+            self.get_coverage_canister_id(),
+            "sign_ecdsa",
+            payload,
+        ));
 
         // Update main result here (test for hash)
         // let bytes: Vec<u8> = input.into();
@@ -82,36 +86,21 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         // let payload = candid::Encode!(&bytes).unwrap();
         // let result = test.execute_ingress(fuzzer_state.get_canister_id_by_name("ecdsa_sign"), "sign_ecdsa", payload);
 
-        let exit_status = match result {
-            Ok(WasmResult::Reply(bytes)) => {
-                let result = Decode!(&bytes, Vec<u8>).unwrap();
-                let d = Scalar::from_repr(key.into()).unwrap();
-                let k = Scalar::from_repr(k.into()).unwrap();
+        let exit_status = if result.0 == ExitKind::Ok && result.1.is_some() {
+            let result = Decode!(&result.1.unwrap(), Vec<u8>).unwrap();
+            let d = Scalar::from_repr(key.into()).unwrap();
+            let k = Scalar::from_repr(k.into()).unwrap();
 
-                let (signature, _): (Signature, _) =
-                    hazmat::sign_prehashed::<Secp256k1, Scalar>(&d, k, &digest).unwrap();
-                let signature_old = Signature::from_der(&result).unwrap();
+            let (signature, _): (Signature, _) =
+                hazmat::sign_prehashed::<Secp256k1, Scalar>(&d, k, &digest).unwrap();
+            let signature_old = Signature::from_der(&result).unwrap();
 
-                if signature != signature_old {
-                    return ExitKind::Crash;
-                }
-                ExitKind::Ok
+            if signature != signature_old {
+                return ExitKind::Crash;
             }
-            Ok(WasmResult::Reject(message)) => {
-                // Canister crashing is interesting
-                if message.contains("Canister trapped") {
-                    ExitKind::Crash
-                } else {
-                    ExitKind::Ok
-                }
-            }
-            Err(e) => match e.code() {
-                ErrorCode::CanisterTrapped | ErrorCode::CanisterCalledTrap => {
-                    println!("{e:?}");
-                    ExitKind::Crash
-                }
-                _ => ExitKind::Ok,
-            },
+            ExitKind::Ok
+        } else {
+            ExitKind::Crash
         };
 
         test.advance_time(Duration::from_secs(1));
