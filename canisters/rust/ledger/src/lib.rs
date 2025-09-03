@@ -16,7 +16,7 @@ fn get_balance(account: Principal) -> u64 {
 #[ic_cdk::update]
 fn update_balance(reduce: u64) {
     BALANCES.with_borrow_mut(|local_balances| {
-        if let Some(balance) = local_balances.get_mut(&ic_cdk::caller()) {
+        if let Some(balance) = local_balances.get_mut(&ic_cdk::api::msg_caller()) {
             *balance = balance.saturating_sub(reduce);
         }
     });

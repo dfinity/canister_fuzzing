@@ -53,7 +53,7 @@ enum StableStructOperation {
 
 #[export_name = "canister_update stable_memory_ops"]
 pub fn stable_memory_ops() {
-    let bytes = ic_cdk::api::call::arg_data_raw();
+    let bytes = ic_cdk::api::msg_arg_data();
     let u = Unstructured::new(&bytes);
     if let Ok(ops) = <Vec<StableStructOperation> as Arbitrary>::arbitrary_take_rest(u) {
         let mut remove_keys: Vec<[u8; KEY_SIZE]> = Vec::new();
@@ -137,5 +137,5 @@ pub fn stable_memory_ops() {
             }
         }
     }
-    ic_cdk::api::call::reply_raw(&[]);
+    ic_cdk::api::msg_reply(&[]);
 }

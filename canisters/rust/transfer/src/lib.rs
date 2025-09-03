@@ -67,8 +67,9 @@ fn get_total_balance() -> u64 {
 }
 
 #[ic_cdk::update]
-async fn refund_balance(trap: u64) {
-    let caller = ic_cdk::caller();
+async fn refund_balance() {
+    let trap: u64 = candid::decode_one(&ic_cdk::api::msg_arg_data()).unwrap_or_default();
+    let caller = ic_cdk::api::msg_caller();
 
     if let Ok(_principal) = CallerGuard::new(caller) {
         let balance =
@@ -76,7 +77,8 @@ async fn refund_balance(trap: u64) {
         if let Some(balance) = balance {
             if balance > trap {
                 let callee = LEDGER_PRINCIPAL.get();
-                let _result: () = ic_cdk::call(callee, "update_balance", (trap,))
+                let _result = ic_cdk::call::Call::bounded_wait(callee, "update_balance")
+                    .with_arg(trap)
                     .await
                     .unwrap();
 

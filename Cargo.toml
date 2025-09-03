@@ -21,19 +21,19 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
-ic-state-machine-tests = { git = "https://github.com/dfinity/ic", rev = "c3f16a62a14444302d96f3afba1e69fde211bcdc"}
-ic-types = { git = "https://github.com/dfinity/ic", rev = "c3f16a62a14444302d96f3afba1e69fde211bcdc"}
-ic-base-types = { git = "https://github.com/dfinity/ic", rev = "c3f16a62a14444302d96f3afba1e69fde211bcdc"}
-ic-canister-sandbox-backend-lib = { git = "https://github.com/dfinity/ic", rev = "c3f16a62a14444302d96f3afba1e69fde211bcdc"}
-ic-wasm-transform = { git = "https://github.com/dfinity/ic", rev = "c3f16a62a14444302d96f3afba1e69fde211bcdc"}
+ic-state-machine-tests = { git = "https://github.com/dfinity/ic", rev = "d26ef1fe5c82779aebebefd1c86befde47c0d151"}
+ic-types = { git = "https://github.com/dfinity/ic", rev = "d26ef1fe5c82779aebebefd1c86befde47c0d151"}
+ic-base-types = { git = "https://github.com/dfinity/ic", rev = "d26ef1fe5c82779aebebefd1c86befde47c0d151"}
+ic-canister-sandbox-backend-lib = { git = "https://github.com/dfinity/ic", rev = "d26ef1fe5c82779aebebefd1c86befde47c0d151", features = ["fuzzing_code"]}
+ic-wasm-transform = { git = "https://github.com/dfinity/ic", rev = "d26ef1fe5c82779aebebefd1c86befde47c0d151"}
 
 anyhow = "1.0.75"
 arbitrary = { version = "1.4.1", features = ["derive"] }
-candid = { version = "0.10.14", features = ["all"] }
+candid = { version = "0.10.17", features = ["all"] }
 candid_parser = "0.1.4"
 getrandom = "0.3"
-ic-cdk = "0.17.2"
-ic-cdk-macros = "0.17.2"
+ic-cdk = "0.18.5"
+ic-cdk-macros = "0.18.5"
 ic-stable-structures = "0.7.0"
 ic_principal = "0.1.1"
 k256 = { version = "0.13", features = ["ecdsa-core"] }
