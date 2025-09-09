@@ -6,20 +6,20 @@ use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 use candid::{Decode, Encode};
+use canister_fuzzer::libafl::executors::ExitKind;
+use canister_fuzzer::libafl::feedback_or;
+use canister_fuzzer::libafl::inputs::ValueInput;
+use canister_fuzzer::libafl::observers::RefCellValueObserver;
+use canister_fuzzer::libafl::stages::{AflStatsStage, CalibrationStage};
 use ic_state_machine_tests::StateMachineBuilder;
 use ic_types::Cycles;
-use libafl::executors::ExitKind;
-use libafl::feedback_or;
-use libafl::inputs::ValueInput;
-use libafl::observers::RefCellValueObserver;
-use libafl::stages::{AflStatsStage, CalibrationStage};
 use slog::Level;
 use std::fs::{self, File};
 use std::io::Read;
 use std::ptr::addr_of;
 use std::time::Duration;
 
-use libafl::{
+use canister_fuzzer::libafl::{
     corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
     events::SimpleEventManager,
     executors::inprocess::InProcessExecutor,
@@ -34,9 +34,9 @@ use libafl::{
     Evaluator,
 };
 
-use libafl::monitors::SimpleMonitor;
+use canister_fuzzer::libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
-use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
+use canister_fuzzer::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
 fn main() {
     let mut fuzzer_state = DecodeCandidFuzzer(FuzzerState::new(
@@ -131,7 +131,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let decoding_map_observer = unsafe {
             RefCellValueObserver::new(
                 DECODING_MAP_OBSERVER_NAME,
-                libafl_bolts::ownedref::OwnedRef::from_ptr(addr_of!(MAP)),
+                canister_fuzzer::libafl_bolts::ownedref::OwnedRef::from_ptr(addr_of!(MAP)),
             )
         };
 

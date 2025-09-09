@@ -1,4 +1,6 @@
 use candid::{Decode, Encode};
+use canister_fuzzer::libafl::executors::ExitKind;
+use canister_fuzzer::libafl::inputs::ValueInput;
 use ic_state_machine_tests::StateMachineBuilder;
 use ic_types::Cycles;
 use k256::elliptic_curve::PrimeField;
@@ -6,8 +8,6 @@ use k256::{
     ecdsa::{hazmat, Signature},
     Scalar, Secp256k1,
 };
-use libafl::executors::ExitKind;
-use libafl::inputs::ValueInput;
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 

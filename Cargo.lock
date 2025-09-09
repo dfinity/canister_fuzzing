@@ -8,7 +8,7 @@ version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfbe277e56a376000877090da837660b4427aad530e3028d44e0bffe4f89a1c1"
 dependencies = [
- "gimli",
+ "gimli 0.31.1",
 ]
 
 [[package]]
@@ -777,18 +777,16 @@ dependencies = [
  "anyhow",
  "candid",
  "chrono",
- "ic-base-types",
  "ic-canister-sandbox-backend-lib",
  "ic-state-machine-tests",
  "ic-types",
- "ic-wasm-transform",
  "libafl",
  "libafl_bolts",
  "once_cell",
  "rand 0.8.5",
  "serde",
  "slog",
- "wasmparser 0.228.0",
+ "wirm",
 ]
 
 [[package]]
@@ -1132,7 +1130,7 @@ dependencies = [
  "cranelift-control",
  "cranelift-entity",
  "cranelift-isle",
- "gimli",
+ "gimli 0.31.1",
  "hashbrown 0.15.4",
  "log",
  "pulley-interpreter",
@@ -1525,8 +1523,6 @@ dependencies = [
  "canister_fuzzer",
  "ic-state-machine-tests",
  "ic-types",
- "libafl",
- "libafl_bolts",
  "once_cell",
  "serde",
  "slog",
@@ -2098,6 +2094,17 @@ name = "gimli"
 version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
+dependencies = [
+ "fallible-iterator",
+ "indexmap 2.10.0",
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "gimli"
+version = "0.32.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc6298e594375a7fead9efd5568f0a46e6a154fb6a9bdcbe3c06946ffd81a5f6"
 dependencies = [
  "fallible-iterator",
  "indexmap 2.10.0",
@@ -5816,7 +5823,6 @@ dependencies = [
  "ic-state-machine-tests",
  "ic-types",
  "k256",
- "libafl",
  "sha2",
  "slog",
 ]
@@ -5830,7 +5836,6 @@ dependencies = [
  "canister_fuzzer",
  "ic-state-machine-tests",
  "ic-types",
- "libafl",
  "slog",
 ]
 
@@ -7655,7 +7660,6 @@ dependencies = [
  "canister_fuzzer",
  "ic-state-machine-tests",
  "ic-types",
- "libafl",
  "once_cell",
  "slog",
 ]
@@ -8408,8 +8412,6 @@ dependencies = [
  "ic-base-types",
  "ic-state-machine-tests",
  "ic-types",
- "libafl",
- "libafl_bolts",
  "once_cell",
  "serde",
  "slog",
@@ -8827,7 +8829,7 @@ dependencies = [
  "anyhow",
  "cranelift-bitset",
  "cranelift-entity",
- "gimli",
+ "gimli 0.31.1",
  "indexmap 2.10.0",
  "log",
  "object 0.36.7",
@@ -8863,7 +8865,7 @@ dependencies = [
  "cranelift-entity",
  "cranelift-frontend",
  "cranelift-native",
- "gimli",
+ "gimli 0.31.1",
  "itertools 0.14.0",
  "log",
  "object 0.36.7",
@@ -8952,7 +8954,7 @@ checksum = "2012e7384c25b91aab2f1b6a1e1cbab9d0f199bbea06cc873597a3f047f05730"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
- "gimli",
+ "gimli 0.31.1",
  "object 0.36.7",
  "target-lexicon",
  "wasmparser 0.235.0",
@@ -9067,7 +9069,7 @@ dependencies = [
  "anyhow",
  "cranelift-assembler-x64",
  "cranelift-codegen",
- "gimli",
+ "gimli 0.31.1",
  "regalloc2",
  "smallvec",
  "target-lexicon",
@@ -9345,6 +9347,21 @@ name = "windows_x86_64_msvc"
 version = "0.53.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
+
+[[package]]
+name = "wirm"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc2dd5551377bda630cba9e329fa3a210c6a68498e3ed10ff2bbfa3a881ba6c2"
+dependencies = [
+ "gimli 0.32.2",
+ "log",
+ "rayon",
+ "serde_json",
+ "tempfile",
+ "wasm-encoder 0.235.0",
+ "wasmparser 0.235.0",
+]
 
 [[package]]
 name = "wit-bindgen-rt"

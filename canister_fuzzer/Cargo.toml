@@ -8,9 +8,7 @@ crate-type = ["lib"]
 
 [dependencies]
 ic-state-machine-tests = { workspace = true }
-ic-base-types = { workspace = true }
 ic-types = { workspace = true }
-ic-wasm-transform = { workspace = true }
 ic-canister-sandbox-backend-lib = { workspace =  true }
 
 candid = { workspace = true }
@@ -19,7 +17,7 @@ libafl = { workspace = true }
 libafl_bolts = { workspace = true }
 once_cell = { workspace = true }
 serde = { workspace = true }
-wasmparser = { workspace = true }
+wirm = { workspace = true }
 rand = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }

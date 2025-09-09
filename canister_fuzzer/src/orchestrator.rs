@@ -13,7 +13,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use libafl::{
+use crate::libafl::{
     corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
     events::SimpleEventManager,
     executors::{inprocess::InProcessExecutor, ExitKind},
@@ -28,10 +28,10 @@ use libafl::{
     Evaluator,
 };
 
+use crate::libafl::monitors::SimpleMonitor;
 use ic_state_machine_tests::WasmResult;
-use libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
-use libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
+use crate::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
 use crate::constants::{AFL_COVERAGE_MAP_SIZE, COVERAGE_FN_EXPORT_NAME};
 use crate::fuzzer::FuzzerState;

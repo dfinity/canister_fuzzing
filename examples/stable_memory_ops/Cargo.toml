@@ -13,7 +13,6 @@ path = "src/stable_memory_ops.rs"
 ic-state-machine-tests = { workspace = true }
 ic-types = { workspace = true }
 slog = { workspace = true }
-libafl = { workspace = true }
 once_cell = { workspace = true }
 canister_fuzzer = { path = "../../canister_fuzzer/"}
 

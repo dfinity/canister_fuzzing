@@ -137,5 +137,5 @@ pub fn stable_memory_ops() {
             }
         }
     }
-    ic_cdk::api::msg_reply(&[]);
+    ic_cdk::api::msg_reply([]);
 }

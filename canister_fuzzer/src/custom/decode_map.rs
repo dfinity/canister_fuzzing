@@ -1,15 +1,15 @@
-use libafl::feedbacks::{Feedback, StateInitializer};
-use libafl::state::HasExecutions;
-use libafl::{executors::ExitKind, observers::value::RefCellValueObserver};
-use libafl::{Error, HasNamedMetadata};
+use crate::libafl::feedbacks::{Feedback, StateInitializer};
+use crate::libafl::state::HasExecutions;
+use crate::libafl::{executors::ExitKind, observers::value::RefCellValueObserver};
+use crate::libafl::{Error, HasNamedMetadata};
 use serde::Deserialize;
 use serde::Serialize;
 use std::borrow::Cow;
 use std::cell::RefCell;
 
-use libafl_bolts::tuples::MatchNameRef;
-use libafl_bolts::tuples::{Handle, MatchName};
-use libafl_bolts::Named;
+use crate::libafl_bolts::tuples::MatchNameRef;
+use crate::libafl_bolts::tuples::{Handle, MatchName};
+use crate::libafl_bolts::Named;
 
 // Struct to store the fuzzing output
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
@@ -86,7 +86,7 @@ where
         _state: &mut S,
         _manager: &mut EM,
         _observers: &OT,
-        _testcase: &mut libafl::corpus::Testcase<I>,
+        _testcase: &mut crate::libafl::corpus::Testcase<I>,
     ) -> Result<(), Error> {
         Ok(())
     }

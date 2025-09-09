@@ -1,9 +1,9 @@
 use candid::{Decode, Encode};
+use canister_fuzzer::libafl::executors::ExitKind;
+use canister_fuzzer::libafl::inputs::ValueInput;
 use ic_state_machine_tests::{two_subnets_simple, StateMachine};
 use ic_types::PrincipalId;
 use ic_types::{ingress::WasmResult, Cycles};
-use libafl::executors::ExitKind;
-use libafl::inputs::ValueInput;
 use std::sync::Arc;
 
 use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};

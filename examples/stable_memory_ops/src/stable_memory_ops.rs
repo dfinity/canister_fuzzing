@@ -1,7 +1,7 @@
+use canister_fuzzer::libafl::executors::ExitKind;
+use canister_fuzzer::libafl::inputs::ValueInput;
 use ic_state_machine_tests::StateMachineBuilder;
 use ic_types::Cycles;
-use libafl::executors::ExitKind;
-use libafl::inputs::ValueInput;
 use std::time::Duration;
 
 use slog::Level;

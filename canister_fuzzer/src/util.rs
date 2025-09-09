@@ -1,7 +1,7 @@
 use std::{fs::File, io::Read};
 
+use crate::libafl::executors::ExitKind;
 use ic_state_machine_tests::{ErrorCode, UserError, WasmResult};
-use libafl::executors::ExitKind;
 
 pub fn read_canister_bytes(env_var: &str) -> Vec<u8> {
     let wasm_path = std::path::PathBuf::from(std::env::var(env_var).unwrap());

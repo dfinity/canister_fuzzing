@@ -25,7 +25,6 @@ ic-state-machine-tests = { git = "https://github.com/dfinity/ic", rev = "d26ef1f
 ic-types = { git = "https://github.com/dfinity/ic", rev = "d26ef1fe5c82779aebebefd1c86befde47c0d151"}
 ic-base-types = { git = "https://github.com/dfinity/ic", rev = "d26ef1fe5c82779aebebefd1c86befde47c0d151"}
 ic-canister-sandbox-backend-lib = { git = "https://github.com/dfinity/ic", rev = "d26ef1fe5c82779aebebefd1c86befde47c0d151", features = ["fuzzing_code"]}
-ic-wasm-transform = { git = "https://github.com/dfinity/ic", rev = "d26ef1fe5c82779aebebefd1c86befde47c0d151"}
 
 anyhow = "1.0.75"
 arbitrary = { version = "1.4.1", features = ["derive"] }
@@ -47,5 +46,5 @@ serde_bytes = "0.11.17"
 serde_cbor = "0.11.2"
 sha2 = "0.10.9"
 slog = "2.7.0"
-wasmparser = "0.228.0"
 chrono = "0.4.41"
+wirm = { version = "2.0.0", features = ["parallel"] }

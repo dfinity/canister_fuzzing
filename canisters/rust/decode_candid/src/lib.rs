@@ -6,5 +6,5 @@ pub fn decode() {
     let bytes = ic_cdk::api::msg_arg_data();
     let _b = candid_parser::IDLArgs::from_bytes_with_config(&bytes, &decoding_config);
     let instructions = ic_cdk::api::performance_counter(0);
-    ic_cdk::api::msg_reply(&instructions.to_le_bytes());
+    ic_cdk::api::msg_reply(instructions.to_le_bytes());
 }
