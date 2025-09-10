@@ -11,9 +11,10 @@
 use anyhow::Result;
 use rand::Rng;
 use wirm::ir::function::FunctionBuilder;
-use wirm::ir::id::{FunctionID, GlobalID};
+use wirm::ir::id::{FunctionID, GlobalID, LocalID};
 use wirm::ir::module::module_functions::FuncKind;
 use wirm::ir::types::{InitExpr, Instructions, Value};
+use wirm::module_builder::AddLocal;
 use wirm::wasmparser::{MemArg, Operator, Validator};
 use wirm::{DataType, InitInstr, Module, Opcode};
 
@@ -112,28 +113,35 @@ fn inject_afl_coverage_export<'a>(
 /// This function iterates through every instruction in every function body.
 /// Before each branch-like instruction (`If`, `Else`, `Block`, `Loop`, `Br`, `BrIf`, `BrTable`),
 /// it inserts an instrumentation snippet that updates the AFL coverage map.
-/// A new i32 local is added to each function to facilitate the instrumentation logic.
 fn instrument_branches(
     module: &mut Module<'_>,
     afl_prev_loc_idx: GlobalID,
     afl_mem_ptr_idx: GlobalID,
 ) {
+    let instrumentation_function =
+        afl_instrumentation_slice(module, afl_prev_loc_idx, afl_mem_ptr_idx);
     let mut rng = rand::thread_rng();
 
-    for function in module.functions.iter_mut() {
-        if matches!(function.kind(), FuncKind::Local(_)) {
+    for (function_index, function) in module.functions.iter_mut().enumerate() {
+        if matches!(function.kind(), FuncKind::Local(_))
+            && FunctionID(function_index as u32) != instrumentation_function
+        {
             let local_function = function.unwrap_local_mut();
-            let afl_local_idx = local_function.add_local(DataType::I32);
-
             let mut new_instructions = Vec::with_capacity(local_function.body.num_instructions * 2);
-            new_instructions.extend(afl_instrumentation_slice(
-                &mut rng,
-                afl_prev_loc_idx.0,
-                afl_mem_ptr_idx.0,
-                afl_local_idx.0,
-            ));
+
+            // Instrument the start of the function
+            let curr_location = rng.gen_range(0..AFL_COVERAGE_MAP_SIZE);
+            new_instructions.extend([
+                Operator::I32Const {
+                    value: curr_location,
+                },
+                Operator::Call {
+                    function_index: instrumentation_function.0,
+                },
+            ]);
 
             for instruction in local_function.body.instructions.get_ops() {
+                // Instrument all branch-like instructions
                 match instruction {
                     Operator::If { .. }
                     | Operator::Else
@@ -142,13 +150,16 @@ fn instrument_branches(
                     | Operator::Br { .. }
                     | Operator::BrIf { .. }
                     | Operator::BrTable { .. } => {
-                        new_instructions.extend(afl_instrumentation_slice(
-                            &mut rng,
-                            afl_prev_loc_idx.0,
-                            afl_mem_ptr_idx.0,
-                            afl_local_idx.0,
-                        ));
-                        new_instructions.push(instruction.clone());
+                        let curr_location = rng.gen_range(0..AFL_COVERAGE_MAP_SIZE);
+                        new_instructions.extend([
+                            Operator::I32Const {
+                                value: curr_location,
+                            },
+                            Operator::Call {
+                                function_index: instrumentation_function.0,
+                            },
+                            instruction.clone(),
+                        ]);
                     }
                     _ => new_instructions.push(instruction.clone()),
                 }
@@ -169,55 +180,42 @@ fn instrument_branches(
 /// It uses the provided global and local variable indices to generate the
 /// corresponding Wasm instructions.
 fn afl_instrumentation_slice(
-    rng: &mut impl Rng,
-    afl_prev_loc_idx: u32,
-    afl_mem_ptr_idx: u32,
-    afl_local_idx: u32,
-) -> Vec<Operator<'static>> {
-    let curr_location = rng.gen_range(0..AFL_COVERAGE_MAP_SIZE);
-    vec![
-        Operator::I32Const {
-            value: curr_location,
-        },
-        Operator::GlobalGet {
-            global_index: afl_prev_loc_idx,
-        },
-        Operator::I32Xor,
-        Operator::GlobalGet {
-            global_index: afl_mem_ptr_idx,
-        },
-        Operator::I32Add,
-        Operator::LocalTee {
-            local_index: afl_local_idx,
-        },
-        Operator::LocalGet {
-            local_index: afl_local_idx,
-        },
-        Operator::I32Load8U {
-            memarg: MemArg {
-                offset: 0,
-                align: 0,
-                memory: 0,
-                max_align: 0,
-            },
-        },
-        Operator::I32Const { value: 1 },
-        Operator::I32Add,
-        Operator::I32Store8 {
-            memarg: MemArg {
-                offset: 0,
-                align: 0,
-                memory: 0,
-                max_align: 0,
-            },
-        },
-        Operator::I32Const {
-            value: curr_location >> 1,
-        },
-        Operator::GlobalSet {
-            global_index: afl_prev_loc_idx,
-        },
-    ]
+    module: &mut Module<'_>,
+    afl_prev_loc_idx: GlobalID,
+    afl_mem_ptr_idx: GlobalID,
+) -> FunctionID {
+    let mut func_builder = FunctionBuilder::new(&[DataType::I32], &[]);
+    let curr_location = LocalID(0);
+    let afl_local_idx = func_builder.add_local(DataType::I32);
+
+    func_builder
+        .local_get(curr_location)
+        .global_get(afl_prev_loc_idx)
+        .i32_xor()
+        .global_get(afl_mem_ptr_idx)
+        .i32_add()
+        .local_tee(afl_local_idx)
+        .local_get(afl_local_idx)
+        .i32_load8_u(MemArg {
+            offset: 0,
+            align: 0,
+            memory: 0,
+            max_align: 0,
+        })
+        .i32_const(1)
+        .i32_add()
+        .i32_store8(MemArg {
+            offset: 0,
+            align: 0,
+            memory: 0,
+            max_align: 0,
+        })
+        .local_get(curr_location)
+        .i32_const(1)
+        .i32_shr_unsigned()
+        .global_set(afl_prev_loc_idx);
+
+    func_builder.finish_module(module)
 }
 
 /// Ensures that the necessary `ic0` System API functions are imported.
