@@ -1,7 +1,7 @@
+use candid::Principal;
 use canister_fuzzer::libafl::executors::ExitKind;
 use canister_fuzzer::libafl::inputs::ValueInput;
-use ic_state_machine_tests::StateMachineBuilder;
-use ic_types::Cycles;
+use pocket_ic::PocketIcBuilder;
 use std::time::Duration;
 
 use slog::Level;
@@ -9,7 +9,6 @@ use slog::Level;
 use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
-use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
 fn main() {
     let mut fuzzer_state = StableMemoryFuzzer(FuzzerState::new(
@@ -22,7 +21,7 @@ fn main() {
         "examples/stable_memory_ops".to_string(),
     ));
 
-    sandbox_main(|| fuzzer_state.run());
+    fuzzer_state.run();
 }
 
 struct StableMemoryFuzzer(FuzzerState);
@@ -35,18 +34,18 @@ impl FuzzerStateProvider for StableMemoryFuzzer {
 
 impl FuzzerOrchestrator for StableMemoryFuzzer {
     fn init(&mut self) {
-        let test = StateMachineBuilder::new()
-            .with_log_level(Some(Level::Critical))
+        let test = PocketIcBuilder::new()
+            .with_application_subnet()
+            .with_log_level(Level::Critical)
             .build();
-
         self.0.init_state(test);
         let test = self.get_state_machine();
 
         for info in self.0.get_iter_mut_canister_info() {
+            let canister_id = test.create_canister();
+            test.add_cycles(canister_id, 5_000_000_000_000);
             let module = instrument_wasm_for_fuzzing(&read_canister_bytes(&info.env_var));
-            let canister_id = test
-                .install_canister_with_cycles(module, vec![], None, Cycles::new(5_000_000_000_000))
-                .unwrap();
+            test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);
         }
     }
@@ -55,8 +54,12 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
         let test = self.get_state_machine();
 
         let bytes: Vec<u8> = input.into();
-        let result =
-            test.execute_ingress(self.get_coverage_canister_id(), "stable_memory_ops", bytes);
+        let result = test.update_call(
+            self.get_coverage_canister_id(),
+            Principal::anonymous(),
+            "stable_memory_ops",
+            bytes,
+        );
 
         let exit_status = parse_canister_result_for_trap(result);
         test.advance_time(Duration::from_secs(1));

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 
 mod data;
-use data::{BoundedFuzzStruct, UnboundedFuzzStruct, MAX_VALUE_SIZE};
+use data::{BoundedFuzzStruct, MAX_VALUE_SIZE, UnboundedFuzzStruct};
 
 const KEY_SIZE: usize = 4;
 type Memory = VirtualMemory<DefaultMemoryImpl>;
@@ -51,7 +51,7 @@ enum StableStructOperation {
     VecPop,
 }
 
-#[export_name = "canister_update stable_memory_ops"]
+#[unsafe(export_name = "canister_update stable_memory_ops")]
 pub fn stable_memory_ops() {
     let bytes = ic_cdk::api::msg_arg_data();
     let u = Unstructured::new(&bytes);

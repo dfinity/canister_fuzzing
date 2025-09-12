@@ -1,4 +1,4 @@
-use build_canister::{build_canisters, Canister, CanisterBuildOpts};
+use build_canister::{Canister, CanisterBuildOpts, build_canisters};
 
 fn main() {
     build_canisters(vec![

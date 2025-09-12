@@ -1,13 +1,12 @@
-use candid::{Decode, Encode};
+use candid::{Decode, Encode, Principal};
 use canister_fuzzer::libafl::executors::ExitKind;
 use canister_fuzzer::libafl::inputs::ValueInput;
-use ic_state_machine_tests::StateMachineBuilder;
-use ic_types::Cycles;
 use k256::elliptic_curve::PrimeField;
 use k256::{
-    ecdsa::{hazmat, Signature},
     Scalar, Secp256k1,
+    ecdsa::{Signature, hazmat},
 };
+use pocket_ic::PocketIcBuilder;
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
@@ -16,7 +15,6 @@ use slog::Level;
 use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
-use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 fn main() {
@@ -29,7 +27,7 @@ fn main() {
         }],
         "examples/motoko_diff".to_string(),
     ));
-    sandbox_main(|| fuzzer_state.run());
+    fuzzer_state.run();
 }
 
 struct MotokoDiffFuzzer(FuzzerState);
@@ -42,18 +40,18 @@ impl FuzzerStateProvider for MotokoDiffFuzzer {
 
 impl FuzzerOrchestrator for MotokoDiffFuzzer {
     fn init(&mut self) {
-        let test = StateMachineBuilder::new()
-            .with_log_level(Some(Level::Critical))
+        let test = PocketIcBuilder::new()
+            .with_application_subnet()
+            .with_log_level(Level::Critical)
             .build();
-
         self.0.init_state(test);
         let test = self.get_state_machine();
 
         for info in self.0.get_iter_mut_canister_info() {
+            let canister_id = test.create_canister();
+            test.add_cycles(canister_id, 5_000_000_000_000);
             let module = instrument_wasm_for_fuzzing(&read_canister_bytes(&info.env_var));
-            let canister_id = test
-                .install_canister_with_cycles(module, vec![], None, Cycles::new(5_000_000_000_000))
-                .unwrap();
+            test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);
         }
     }
@@ -71,8 +69,9 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         let digest = hasher.finalize();
         let b = digest.as_slice().to_vec();
         let payload = candid::Encode!(&b, &key, &k).unwrap();
-        let result = parse_canister_result_for_trap(test.execute_ingress(
+        let result = parse_canister_result_for_trap(test.update_call(
             self.get_coverage_canister_id(),
+            Principal::anonymous(),
             "sign_ecdsa",
             payload,
         ));
@@ -84,7 +83,7 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         // let digest = hasher.finalize();
         // let b = digest.as_slice().to_vec();
         // let payload = candid::Encode!(&bytes).unwrap();
-        // let result = test.execute_ingress(fuzzer_state.get_canister_id_by_name("ecdsa_sign"), "sign_ecdsa", payload);
+        // let result = test.update_call(fuzzer_state.get_canister_id_by_name("ecdsa_sign"), Principal::anonymous(), "sign_ecdsa", payload);
 
         let exit_status = if result.0 == ExitKind::Ok && result.1.is_some() {
             let result = Decode!(&result.1.unwrap(), Vec<u8>).unwrap();

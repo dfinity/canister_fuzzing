@@ -10,14 +10,13 @@ name = "motoko_diff"
 path = "src/motoko_diff.rs"
 
 [dependencies]
-ic-state-machine-tests = { workspace = true }
-ic-types = { workspace = true }
 candid = { workspace = true }
-slog = { workspace = true }
+canister_fuzzer = { path = "../../canister_fuzzer/" }
 getrandom = { workspace = true }
 k256 = { workspace = true }
+pocket-ic = { workspace = true }
 sha2 = { workspace = true }
-canister_fuzzer = { path = "../../canister_fuzzer/"}
+slog = { workspace = true }
 
 [build-dependencies]
-build_canister = { path = "../../build_canister/"}
+build_canister = { path = "../../build_canister/" }

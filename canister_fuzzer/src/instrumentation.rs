@@ -4,8 +4,10 @@
 //! The primary goal is to inject code into a Wasm module that tracks execution paths.
 //! This is achieved by:
 //! 1.  Injecting global variables to maintain state, such as the previous location.
-//! 2.  Adding instrumentation code at the beginning of basic blocks (before branch instructions).
-//! 3.  Exporting a function (`export_coverage`) that allows the fuzzer to retrieve the
+//! 2.  Injecting a helper function that contains the core instrumentation logic.
+//! 3.  Instrumenting the Wasm bytecode by inserting calls to the helper function at the
+//!     start of each function and before every branch, effectively covering all basic blocks.
+//! 4.  Exporting a function (`export_coverage`) that allows the fuzzer to retrieve the
 //!     coverage map from the canister.
 
 use anyhow::Result;
@@ -42,8 +44,9 @@ pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8]) -> Vec<u8> {
 ///
 /// It performs the following steps:
 /// 1. Injects global variables required for tracking coverage.
-/// 2. Injects an `export_coverage` query function to expose the coverage map.
-/// 3. Instruments all branch instructions to update the coverage map.
+/// 2. Injects the `export_coverage` query function to expose the coverage map.
+/// 3. Instruments all functions by inserting calls to a helper function at the
+///    start of each function and before each branch instruction.
 fn instrument_for_afl(module: &mut Module<'_>) -> Result<()> {
     let (afl_prev_loc_idx, afl_mem_ptr_idx) = inject_globals(module);
     println!(
@@ -108,11 +111,12 @@ fn inject_afl_coverage_export<'a>(
     Ok(())
 }
 
-/// Instruments branch instructions in all functions of the module.
+/// Instruments all local functions in the module to track code coverage.
 ///
 /// This function iterates through every instruction in every function body.
-/// Before each branch-like instruction (`If`, `Else`, `Block`, `Loop`, `Br`, `BrIf`, `BrTable`),
-/// it inserts an instrumentation snippet that updates the AFL coverage map.
+/// It inserts a call to a helper instrumentation function at the beginning of the function
+/// and before each branch-like instruction (`If`, `Else`, `Block`, `Loop`, `Br`, `BrIf`, `BrTable`).
+/// This ensures that every basic block is instrumented.
 fn instrument_branches(
     module: &mut Module<'_>,
     afl_prev_loc_idx: GlobalID,
@@ -169,16 +173,21 @@ fn instrument_branches(
     }
 }
 
-/// Generates the sequence of Wasm operators for AFL instrumentation.
+/// Creates and injects a helper function that contains the core AFL instrumentation logic.
 ///
-/// This is a Rust implementation of the standard AFL instrumentation logic:
+/// This function will be called from instrumented locations (start of functions, before branches).
+/// It implements the standard AFL coverage tracking mechanism:
 /// ```c
-///   cur_location = <COMPILE_TIME_RANDOM>;
-///   shared_mem[cur_location ^ prev_location]++;
-///   prev_location = cur_location >> 1;
+///   curr_location = <COMPILE_TIME_RANDOM>;
+///   shared_mem[curr_location ^ prev_location]++;
+///   prev_location = curr_location >> 1;
 /// ```
-/// It uses the provided global and local variable indices to generate the
-/// corresponding Wasm instructions.
+/// The generated function takes the current location (`curr_location`) as an i32 parameter
+/// and is added to the module.
+///
+/// # Returns
+///
+/// The `FunctionID` of the newly created helper function.
 fn afl_instrumentation_slice(
     module: &mut Module<'_>,
     afl_prev_loc_idx: GlobalID,

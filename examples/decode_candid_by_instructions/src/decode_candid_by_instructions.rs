@@ -1,18 +1,16 @@
-use canister_fuzzer::custom::decode_map::{DecodingMapFeedback, DECODING_MAP_OBSERVER_NAME, MAP};
+use canister_fuzzer::custom::decode_map::{DECODING_MAP_OBSERVER_NAME, DecodingMapFeedback, MAP};
 use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
-use canister_fuzzer::sandbox_shim::sandbox_main;
 use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
 
-use candid::{Decode, Encode};
+use candid::{Decode, Encode, Principal};
 use canister_fuzzer::libafl::executors::ExitKind;
 use canister_fuzzer::libafl::feedback_or;
 use canister_fuzzer::libafl::inputs::ValueInput;
 use canister_fuzzer::libafl::observers::RefCellValueObserver;
 use canister_fuzzer::libafl::stages::{AflStatsStage, CalibrationStage};
-use ic_state_machine_tests::StateMachineBuilder;
-use ic_types::Cycles;
+use pocket_ic::PocketIcBuilder;
 use slog::Level;
 use std::fs::{self, File};
 use std::io::Read;
@@ -20,18 +18,18 @@ use std::ptr::addr_of;
 use std::time::Duration;
 
 use canister_fuzzer::libafl::{
+    Evaluator,
     corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
     events::SimpleEventManager,
     executors::inprocess::InProcessExecutor,
-    feedbacks::{map::AflMapFeedback, CrashFeedback},
+    feedbacks::{CrashFeedback, map::AflMapFeedback},
     fuzzer::{Fuzzer, StdFuzzer},
     inputs::BytesInput,
-    mutators::{havoc_mutations, HavocScheduledMutator},
-    observers::map::{hitcount_map::HitcountsMapObserver, StdMapObserver},
+    mutators::{HavocScheduledMutator, havoc_mutations},
+    observers::map::{StdMapObserver, hitcount_map::HitcountsMapObserver},
     schedulers::QueueScheduler,
     stages::mutational::StdMutationalStage,
     state::StdState,
-    Evaluator,
 };
 
 use canister_fuzzer::libafl::monitors::SimpleMonitor;
@@ -49,7 +47,7 @@ fn main() {
         "examples/decode_candid_by_instructions".to_string(),
     ));
 
-    sandbox_main(|| fuzzer_state.run());
+    fuzzer_state.run();
 }
 
 struct DecodeCandidFuzzer(FuzzerState);
@@ -62,18 +60,18 @@ impl FuzzerStateProvider for DecodeCandidFuzzer {
 
 impl FuzzerOrchestrator for DecodeCandidFuzzer {
     fn init(&mut self) {
-        let test = StateMachineBuilder::new()
-            .with_log_level(Some(Level::Critical))
+        let test = PocketIcBuilder::new()
+            .with_application_subnet()
+            .with_log_level(Level::Critical)
             .build();
-
         self.0.init_state(test);
         let test = self.get_state_machine();
 
         for info in self.0.get_iter_mut_canister_info() {
+            let canister_id = test.create_canister();
+            test.add_cycles(canister_id, 5_000_000_000_000);
             let module = instrument_wasm_for_fuzzing(&read_canister_bytes(&info.env_var));
-            let canister_id = test
-                .install_canister_with_cycles(module, vec![], None, Cycles::new(5_000_000_000_000))
-                .unwrap();
+            test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);
         }
     }
@@ -83,8 +81,9 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let test = self.get_state_machine();
 
         let bytes: Vec<u8> = input.into();
-        let result = parse_canister_result_for_trap(test.execute_ingress(
+        let result = parse_canister_result_for_trap(test.update_call(
             self.get_coverage_canister_id(),
+            Principal::anonymous(),
             "parse_candid",
             Encode!(&bytes).unwrap(),
         ));

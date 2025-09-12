@@ -1,4 +1,4 @@
-#[export_name = "canister_update decode"]
+#[unsafe(export_name = "canister_update decode")]
 pub fn decode() {
     let mut decoding_config = candid_parser::DecoderConfig::new();
     decoding_config.set_decoding_quota(2_000_000_000);
