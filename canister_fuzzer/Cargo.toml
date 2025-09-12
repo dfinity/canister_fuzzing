@@ -7,17 +7,15 @@ edition.workspace = true
 crate-type = ["lib"]
 
 [dependencies]
-ic-state-machine-tests = { workspace = true }
-ic-types = { workspace = true }
-ic-canister-sandbox-backend-lib = { workspace =  true }
-
+anyhow = { workspace = true }
 candid = { workspace = true }
-slog = { workspace = true }
+chrono = { workspace = true }
+ic-management-canister-types = { workspace = true }
 libafl = { workspace = true }
 libafl_bolts = { workspace = true }
 once_cell = { workspace = true }
-serde = { workspace = true }
-wirm = { workspace = true }
+pocket-ic = { workspace = true }
 rand = { workspace = true }
-anyhow = { workspace = true }
-chrono = { workspace = true }
+serde = { workspace = true }
+slog = { workspace = true }
+wirm = { workspace = true }

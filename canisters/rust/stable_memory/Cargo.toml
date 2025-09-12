@@ -7,12 +7,12 @@ edition.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
+arbitrary = { workspace = true }
 candid = { workspace = true }
 candid_parser = { workspace = true }
 ic-cdk = { workspace = true }
 ic-cdk-macros = { workspace = true }
 ic-stable-structures = { workspace = true }
 serde = { workspace = true }
-serde_cbor = { workspace = true }
 serde_bytes = { workspace = true }
-arbitrary = { workspace = true }
+serde_cbor = { workspace = true }

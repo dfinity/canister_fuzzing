@@ -1,4 +1,4 @@
-use ic_principal::Principal;
+use candid::Principal;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 

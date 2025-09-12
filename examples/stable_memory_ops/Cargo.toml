@@ -10,11 +10,11 @@ name = "stable_memory_ops"
 path = "src/stable_memory_ops.rs"
 
 [dependencies]
-ic-state-machine-tests = { workspace = true }
-ic-types = { workspace = true }
-slog = { workspace = true }
+candid = { workspace = true }
+canister_fuzzer = { path = "../../canister_fuzzer/" }
 once_cell = { workspace = true }
-canister_fuzzer = { path = "../../canister_fuzzer/"}
+pocket-ic = { workspace = true }
+slog = { workspace = true }
 
 [build-dependencies]
-build_canister = { path = "../../build_canister/"}
+build_canister = { path = "../../build_canister/" }

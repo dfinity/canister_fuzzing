@@ -5,31 +5,31 @@
 //! configures and starts the `libafl` fuzzing loop, while the `test_one_input` function
 //! provides a convenient way to debug specific inputs.
 
+use candid::Principal;
 use chrono::Local;
-use ic_state_machine_tests::StateMachine;
-use ic_types::CanisterId;
+use ic_management_canister_types::CanisterId;
+use pocket_ic::PocketIc;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::libafl::{
+    Evaluator,
     corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
     events::SimpleEventManager,
-    executors::{inprocess::InProcessExecutor, ExitKind},
-    feedbacks::{map::AflMapFeedback, CrashFeedback},
+    executors::{ExitKind, inprocess::InProcessExecutor},
+    feedbacks::{CrashFeedback, map::AflMapFeedback},
     fuzzer::{Fuzzer, StdFuzzer},
     inputs::BytesInput,
-    mutators::{havoc_mutations, HavocScheduledMutator},
-    observers::map::{hitcount_map::HitcountsMapObserver, StdMapObserver},
+    mutators::{HavocScheduledMutator, havoc_mutations},
+    observers::map::{StdMapObserver, hitcount_map::HitcountsMapObserver},
     schedulers::QueueScheduler,
-    stages::{mutational::StdMutationalStage, AflStatsStage, CalibrationStage},
+    stages::{AflStatsStage, CalibrationStage, mutational::StdMutationalStage},
     state::StdState,
-    Evaluator,
 };
 
 use crate::libafl::monitors::SimpleMonitor;
-use ic_state_machine_tests::WasmResult;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use crate::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
@@ -47,7 +47,9 @@ use crate::fuzzer::FuzzerState;
 /// Access to this map is carefully controlled within the fuzzing loop.
 static mut COVERAGE_MAP: &mut [u8] = &mut [0; AFL_COVERAGE_MAP_SIZE as usize];
 
+/// A trait for types that can provide access to the global `FuzzerState`.
 pub trait FuzzerStateProvider {
+    /// Returns a reference to the `FuzzerState`.
     fn get_fuzzer_state(&self) -> &FuzzerState;
 }
 
@@ -84,8 +86,8 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         self.get_fuzzer_state().get_fuzzer_dir()
     }
 
-    /// Returns a thread-safe reference to the IC `StateMachine`.
-    fn get_state_machine(&self) -> Arc<StateMachine> {
+    /// Returns a thread-safe reference to the `PocketIc` instance.
+    fn get_state_machine(&self) -> Arc<PocketIc> {
         self.get_fuzzer_state().get_state_machine()
     }
 
@@ -94,9 +96,14 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         self.get_fuzzer_state().get_coverage_canister_id()
     }
 
-    /// Creates and returns the path to the directory for storing new and interesting inputs.
+    /// Creates and returns the path to a new timestamped directory for storing solutions.
     ///
-    /// The directory is structured as `target/artifacts/<fuzzer_dir>/<timestamp>/input`.
+    /// The directory is structured as `target/artifacts/<fuzzer_dir>/<timestamp>/input`,
+    /// where `<timestamp>` is based on the current time.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the directory cannot be created.
     fn input_dir(&self) -> PathBuf {
         let input_dir = FuzzerState::get_target_dir()
             .join("artifacts")
@@ -108,9 +115,14 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         input_dir
     }
 
-    /// Creates and returns the path to the directory for storing crashing inputs.
+    /// Creates and returns the path to a new timestamped directory for storing crashing inputs.
     ///
-    /// The directory is structured as `target/artifacts/<fuzzer_dir>/<timestamp>/crashes`.
+    /// The directory is structured as `target/artifacts/<fuzzer_dir>/<timestamp>/crashes`,
+    /// where `<timestamp>` is based on the current time.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the directory cannot be created.
     fn crashes_dir(&self) -> PathBuf {
         let crashes_dir = FuzzerState::get_target_dir()
             .join("artifacts")
@@ -125,7 +137,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     /// Returns the path to the seed corpus directory.
     ///
     /// This directory should contain initial valid inputs to kickstart the fuzzing process.
-    /// It is structured as <fuzzer_dir>/corpus
+    /// The path is resolved relative to the workspace root, as `<fuzzer_dir>/corpus`.
     fn corpus_dir(&self) -> PathBuf {
         FuzzerState::get_target_dir()
             .parent()
@@ -135,30 +147,43 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     }
 
     /// Fetches the coverage map from the instrumented canister and updates the global `COVERAGE_MAP`.
-    /// It does this by making a query call to the `export_coverage` function.
+    ///
+    /// It makes a query call to the `export_coverage` function on the coverage canister.
+    /// If the query fails, the coverage map is not updated.
     #[allow(static_mut_refs)]
     fn set_coverage_map(&self) {
         let test = self.get_state_machine();
-        let result = test.query(
+        let result = test.query_call(
             self.get_coverage_canister_id(),
+            Principal::anonymous(),
             COVERAGE_FN_EXPORT_NAME,
             vec![],
         );
-        if let Ok(WasmResult::Reply(result)) = result {
+        if let Ok(result) = result {
             unsafe { COVERAGE_MAP.copy_from_slice(&result) };
         }
     }
 
-    /// Provides a mutable reference to the static `COVERAGE_MAP`.
+    /// Provides a mutable reference to the global `COVERAGE_MAP`.
     fn get_coverage_map(&self) -> &'static mut [u8] {
         unsafe { COVERAGE_MAP }
     }
 
     /// The main entry point for running a fuzzing campaign.
     ///
-    /// This function sets up the `libafl` environment, including the executor,
-    /// state, feedbacks, and mutators. It then loads the initial corpus and
-    /// starts the fuzzing loop.
+    /// This function orchestrates the entire fuzzing process:
+    /// 1. Calls `self.init()` for one-time setup.
+    /// 2. Defines a `harness` closure that wraps `self.execute()` and updates the coverage map.
+    /// 3. Sets up `libafl` components:
+    ///    - A `HitcountsMapObserver` to monitor the `COVERAGE_MAP`.
+    ///    - `AflMapFeedback` for coverage-guided feedback and `CrashFeedback` for finding crashes.
+    ///    - A `StdState` to hold the fuzzer's state (corpus, solutions, etc.).
+    ///    - A `SimpleEventManager` with a `SimpleMonitor` for logging.
+    ///    - A `QueueScheduler` to decide which input to fuzz next.
+    ///    - An `InProcessExecutor` to run the harness.
+    /// 4. Loads the initial seed corpus from the directory provided by `corpus_dir()`.
+    /// 5. Configures mutational stages, including a `HavocScheduledMutator`.
+    /// 6. Starts the main fuzzing loop.
     fn run(&mut self) {
         self.init();
 
@@ -248,11 +273,11 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     /// Executes a single input against the orchestrator's harness.
     ///
     /// This function is useful for debugging specific inputs, such as those that
-    /// have caused a crash, without running the full fuzzing loop.
+    /// have caused a crash, without running the full fuzzing loop. It calls
+    /// `init`, `setup`, `execute`, and `cleanup` in sequence for the given input.
     ///
     /// # Arguments
     ///
-    /// * `orchestrator` - An implementation of the `FuzzerOrchestrator` trait.
     /// * `bytes` - The raw byte vector of the input to be tested.
     fn test_one_input(&mut self, bytes: Vec<u8>) {
         self.init();

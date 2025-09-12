@@ -10,11 +10,10 @@ name = "motoko_shim"
 path = "src/motoko_shim.rs"
 
 [dependencies]
-ic-state-machine-tests = { workspace = true }
-ic-types = { workspace = true }
 candid = { workspace = true }
+canister_fuzzer = { path = "../../canister_fuzzer/" }
+pocket-ic = { workspace = true }
 slog = { workspace = true }
-canister_fuzzer = { path = "../../canister_fuzzer/"}
 
 [build-dependencies]
-build_canister = { path = "../../build_canister/"}
+build_canister = { path = "../../build_canister/" }

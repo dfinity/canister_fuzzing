@@ -1,15 +1,15 @@
 use crate::libafl::feedbacks::{Feedback, StateInitializer};
 use crate::libafl::state::HasExecutions;
-use crate::libafl::{executors::ExitKind, observers::value::RefCellValueObserver};
 use crate::libafl::{Error, HasNamedMetadata};
+use crate::libafl::{executors::ExitKind, observers::value::RefCellValueObserver};
 use serde::Deserialize;
 use serde::Serialize;
 use std::borrow::Cow;
 use std::cell::RefCell;
 
+use crate::libafl_bolts::Named;
 use crate::libafl_bolts::tuples::MatchNameRef;
 use crate::libafl_bolts::tuples::{Handle, MatchName};
-use crate::libafl_bolts::Named;
 
 // Struct to store the fuzzing output
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]

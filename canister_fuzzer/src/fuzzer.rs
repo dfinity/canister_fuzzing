@@ -1,16 +1,17 @@
-use ic_state_machine_tests::StateMachine;
-use ic_types::CanisterId;
+use ic_management_canister_types::CanisterId;
+use pocket_ic::PocketIc;
 use std::sync::Arc;
 use std::{env, path::PathBuf, slice::IterMut};
 
 /// Represents the global state for a fuzzing campaign.
 ///
-/// This struct holds a reference to the IC `StateMachine`, a list of all
+/// This struct holds a reference to the `PocketIc` instance (the IC state machine), a list of all
 /// canisters under test, and the directory for fuzzer-specific artifacts.
 pub struct FuzzerState {
-    /// The IC state machine used to execute canister calls in a simulated environment.
-    /// It's wrapped in an `Arc` to allow shared, thread-safe access.
-    state: Option<Arc<StateMachine>>,
+    /// The `PocketIc` instance used to execute canister calls in a simulated environment.
+    /// It's wrapped in an `Arc` to allow shared, thread-safe access, and an `Option`
+    /// because it's initialized after the `FuzzerState` is created.
+    state: Option<Arc<PocketIc>>,
     /// A list of all canisters involved in the fuzzing setup.
     canisters: Vec<CanisterInfo>,
     /// The name of the fuzzer-specific directory.
@@ -26,12 +27,17 @@ pub struct CanisterInfo {
     pub name: String,
     /// The name of the environment variable that holds the path to the canister's Wasm module.
     pub env_var: String,
+    /// The type of the canister, indicating its role in the fuzzing setup.
     pub ty: CanisterType,
 }
 
+/// Defines the role of a canister in the fuzzing setup.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum CanisterType {
+    /// The canister that is instrumented for code coverage.
+    /// There must be exactly one coverage canister.
     Coverage,
+    /// A supporting canister that is part of the test environment but not instrumented for coverage.
     Support,
 }
 
@@ -59,11 +65,15 @@ impl FuzzerState {
     }
 
     /// Initializes the state machine for the fuzzer.
-    pub fn init_state(&mut self, state: StateMachine) {
+    pub fn init_state(&mut self, state: PocketIc) {
         self.state = Some(Arc::new(state));
     }
 
     /// Returns the `CanisterId` of the coverage canister.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the coverage canister's ID has not been set.
     pub(crate) fn get_coverage_canister_id(&self) -> CanisterId {
         self.canisters
             .iter()
@@ -78,7 +88,7 @@ impl FuzzerState {
     /// # Panics
     ///
     /// Panics if the state machine has not been initialized via `init_state`.
-    pub(crate) fn get_state_machine(&self) -> Arc<StateMachine> {
+    pub(crate) fn get_state_machine(&self) -> Arc<PocketIc> {
         self.state.as_ref().unwrap().clone()
     }
 
