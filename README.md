@@ -22,7 +22,7 @@ Before you begin, ensure you have the following installed:
   rustup default stable
   rustup target add wasm32-unknown-unknown
   ```
-- **DFINITY Canister SDK (`dfx`)**: Required for building Motoko canisters. Installation ![guide](https://internetcomputer.org/docs/building-apps/getting-started/install).
+- **DFINITY Canister SDK (`dfx`)**: Required for building Motoko canisters. Installation [guide](https://internetcomputer.org/docs/building-apps/getting-started/install).
 - **Mops**: A package manager for Motoko.
   ```sh
   npm install -g mops
