@@ -1,10 +1,13 @@
 use pocket_ic::{ErrorCode, RejectResponse};
 use std::{fs::File, io::Read};
 
-use crate::libafl::executors::ExitKind;
+use crate::{fuzzer::WasmPath, libafl::executors::ExitKind};
 
-pub fn read_canister_bytes(env_var: &str) -> Vec<u8> {
-    let wasm_path = std::path::PathBuf::from(std::env::var(env_var).unwrap());
+pub fn read_canister_bytes(wasm_path: WasmPath) -> Vec<u8> {
+    let wasm_path = match wasm_path {
+        WasmPath::EnvVar(env_var) => std::path::PathBuf::from(std::env::var(env_var).unwrap()),
+        WasmPath::Path(path) => path,
+    };
     let mut f = File::open(wasm_path).unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).unwrap();

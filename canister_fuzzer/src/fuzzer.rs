@@ -26,7 +26,7 @@ pub struct CanisterInfo {
     /// A unique friendly name to identify the canister within the fuzzer.
     pub name: String,
     /// The name of the environment variable that holds the path to the canister's Wasm module.
-    pub env_var: String,
+    pub wasm_path: WasmPath,
     /// The type of the canister, indicating its role in the fuzzing setup.
     pub ty: CanisterType,
 }
@@ -39,6 +39,13 @@ pub enum CanisterType {
     Coverage,
     /// A supporting canister that is part of the test environment but not instrumented for coverage.
     Support,
+}
+
+/// Defines the role of a canister in the fuzzing setup.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+pub enum WasmPath {
+    EnvVar(String),
+    Path(PathBuf),
 }
 
 impl FuzzerState {
@@ -117,12 +124,12 @@ impl FuzzerState {
     /// # Panics
     ///
     /// Panics if no canister with the given `name` is found.
-    pub fn get_canister_env_by_name(&self, name: &str) -> String {
+    pub fn get_canister_wasm_path_by_name(&self, name: &str) -> WasmPath {
         self.canisters
             .iter()
             .find(|c| c.name == name)
             .unwrap_or_else(|| panic!("Canister {name} not found"))
-            .env_var
+            .wasm_path
             .clone()
     }
 

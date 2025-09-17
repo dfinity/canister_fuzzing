@@ -4,7 +4,7 @@ use canister_fuzzer::libafl::inputs::ValueInput;
 use pocket_ic::PocketIcBuilder;
 use slog::Level;
 
-use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
+use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::util::read_canister_bytes;
@@ -17,13 +17,13 @@ fn main() {
             CanisterInfo {
                 id: None,
                 name: "ledger".to_string(),
-                env_var: "LEDGER_WASM_PATH".to_string(),
+                wasm_path: WasmPath::EnvVar("LEDGER_WASM_PATH".to_string()),
                 ty: CanisterType::Support,
             },
             CanisterInfo {
                 id: None,
                 name: "transfer".to_string(),
-                env_var: "TRANSFER_WASM_PATH".to_string(),
+                wasm_path: WasmPath::EnvVar("TRANSFER_WASM_PATH".to_string()),
                 ty: CanisterType::Coverage,
             },
         ],
@@ -54,14 +54,14 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
         let ledger_canister_id = test.create_canister();
         test.add_cycles(ledger_canister_id, u128::MAX / 2);
         let module = instrument_wasm_for_fuzzing(&read_canister_bytes(
-            &self.0.get_canister_env_by_name("ledger"),
+            self.0.get_canister_wasm_path_by_name("ledger").clone(),
         ));
         test.install_canister(ledger_canister_id, module, vec![], None);
 
         let main_canister_id = test.create_canister();
         test.add_cycles(main_canister_id, u128::MAX / 2);
         let module = instrument_wasm_for_fuzzing(&read_canister_bytes(
-            &self.0.get_canister_env_by_name("transfer"),
+            self.0.get_canister_wasm_path_by_name("transfer").clone(),
         ));
         test.install_canister(
             main_canister_id,

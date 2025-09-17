@@ -1,5 +1,5 @@
 use canister_fuzzer::custom::decode_map::{DECODING_MAP_OBSERVER_NAME, DecodingMapFeedback, MAP};
-use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
+use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
@@ -41,7 +41,7 @@ fn main() {
         vec![CanisterInfo {
             id: None,
             name: "candid_decode".to_string(),
-            env_var: "DECODE_CANDID_WASM_PATH".to_string(),
+            wasm_path: WasmPath::EnvVar("DECODE_CANDID_WASM_PATH".to_string()),
             ty: CanisterType::Coverage,
         }],
         "examples/decode_candid_by_instructions".to_string(),
@@ -70,7 +70,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         for info in self.0.get_iter_mut_canister_info() {
             let canister_id = test.create_canister();
             test.add_cycles(canister_id, 5_000_000_000_000);
-            let module = instrument_wasm_for_fuzzing(&read_canister_bytes(&info.env_var));
+            let module = instrument_wasm_for_fuzzing(&read_canister_bytes(info.wasm_path.clone()));
             test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);
         }
