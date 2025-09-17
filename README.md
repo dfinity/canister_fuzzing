@@ -176,7 +176,7 @@ fn main() {
             },
             // Add other canisters here if needed
         ],
-        "examples/my_fuzzer".to_string(),
+        Some("examples/my_fuzzer".to_string()),
     ));
 
     fuzzer.run();
@@ -199,7 +199,16 @@ When the fuzzer finds a crash, it saves the input that caused it to the `crashes
 
     fn main() {
         let mut fuzzer = MyFuzzer(FuzzerState::new(
-            // ... fuzzer state setup as before
+            vec![
+                CanisterInfo {
+                    id: None,
+                    name: "my_target_canister".to_string(),
+                    wasm_path: WasmPath::EnvVar("MY_TARGET_CANISTER_WASM_PATH".to_string()),
+                    ty: CanisterType::Coverage,
+                },
+                // Add other canisters here if needed
+            ],
+            Some("examples/my_fuzzer".to_string()),
         ));
 
         // To run the fuzzer:

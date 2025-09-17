@@ -14,8 +14,9 @@ pub struct FuzzerState {
     state: Option<Arc<PocketIc>>,
     /// A list of all canisters involved in the fuzzing setup.
     canisters: Vec<CanisterInfo>,
-    /// The name of the fuzzer-specific directory.
-    fuzzer_dir: String,
+    /// The name of the fuzzer-specific directory. If `None`, the user must
+    /// implement their own artifact and corpus directory logic.
+    fuzzer_dir: Option<String>,
 }
 
 /// Contains information describing a single canister used in the fuzzer.
@@ -56,8 +57,10 @@ impl FuzzerState {
     /// # Arguments
     ///
     /// * `canisters` - A vector of `CanisterInfo` structs, one for each canister to be fuzzed.
-    /// * `fuzzer_dir` - A string identifying the directory for this fuzzer's artifacts.
-    pub fn new(canisters: Vec<CanisterInfo>, fuzzer_dir: String) -> Self {
+    /// * `fuzzer_dir` - An optional string identifying the directory for this fuzzer's artifacts.
+    ///   If `None`, you must override `corpus_dir`, `crashes_dir`, and `input_dir` in your
+    ///   `FuzzerOrchestrator` implementation.
+    pub fn new(canisters: Vec<CanisterInfo>, fuzzer_dir: Option<String>) -> Self {
         assert!(
             canisters
                 .iter()
@@ -101,8 +104,8 @@ impl FuzzerState {
         self.state.as_ref().unwrap().clone()
     }
 
-    /// Returns the fuzzer-specific directory name.
-    pub(crate) fn get_fuzzer_dir(&self) -> String {
+    /// Returns the fuzzer-specific directory name, if provided.
+    pub(crate) fn get_fuzzer_dir(&self) -> Option<String> {
         self.fuzzer_dir.clone()
     }
 

@@ -81,8 +81,8 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     /// This could involve restoring the `StateMachine` from a snapshot.
     fn cleanup(&self) {}
 
-    /// Returns the name of the specific directory for this fuzzer.
-    fn get_fuzzer_dir(&self) -> String {
+    /// Returns the name of the specific directory for this fuzzer, if provided.
+    fn get_fuzzer_dir(&self) -> Option<String> {
         self.get_fuzzer_state().get_fuzzer_dir()
     }
 
@@ -103,11 +103,16 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     ///
     /// # Panics
     ///
+    /// Panics if `fuzzer_dir` was not provided in `FuzzerState::new`. In this case,
+    /// you must override this method with your own implementation.
     /// Panics if the directory cannot be created.
     fn input_dir(&self) -> PathBuf {
+        let fuzzer_dir = self.get_fuzzer_dir().expect(
+            "`fuzzer_dir` is None. You must implement `input_dir`, `crashes_dir`, and `corpus_dir`.",
+        );
         let input_dir = FuzzerState::get_target_dir()
             .join("artifacts")
-            .join(self.get_fuzzer_dir().clone())
+            .join(fuzzer_dir)
             .join(Local::now().format("%Y%m%d_%H%M").to_string())
             .join("input");
         fs::create_dir_all(&input_dir)
@@ -122,11 +127,16 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     ///
     /// # Panics
     ///
+    /// Panics if `fuzzer_dir` was not provided in `FuzzerState::new`. In this case,
+    /// you must override this method with your own implementation.
     /// Panics if the directory cannot be created.
     fn crashes_dir(&self) -> PathBuf {
+        let fuzzer_dir = self.get_fuzzer_dir().expect(
+            "`fuzzer_dir` is None. You must implement `input_dir`, `crashes_dir`, and `corpus_dir`.",
+        );
         let crashes_dir = FuzzerState::get_target_dir()
             .join("artifacts")
-            .join(self.get_fuzzer_dir().clone())
+            .join(fuzzer_dir)
             .join(Local::now().format("%Y%m%d_%H%M").to_string())
             .join("crashes");
         fs::create_dir_all(&crashes_dir)
@@ -138,11 +148,19 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     ///
     /// This directory should contain initial valid inputs to kickstart the fuzzing process.
     /// The path is resolved relative to the workspace root, as `<fuzzer_dir>/corpus`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `fuzzer_dir` was not provided in `FuzzerState::new`. In this case,
+    /// you must override this method with your own implementation.
     fn corpus_dir(&self) -> PathBuf {
+        let fuzzer_dir = self.get_fuzzer_dir().expect(
+            "`fuzzer_dir` is None. You must implement `input_dir`, `crashes_dir`, and `corpus_dir`.",
+        );
         FuzzerState::get_target_dir()
             .parent()
             .unwrap()
-            .join(self.get_fuzzer_dir().clone())
+            .join(fuzzer_dir)
             .join("corpus")
     }
 

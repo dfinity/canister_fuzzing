@@ -44,7 +44,7 @@ fn main() {
             wasm_path: WasmPath::EnvVar("DECODE_CANDID_WASM_PATH".to_string()),
             ty: CanisterType::Coverage,
         }],
-        "examples/decode_candid_by_instructions".to_string(),
+        Some("examples/decode_candid_by_instructions".to_string()),
     ));
 
     fuzzer_state.run();

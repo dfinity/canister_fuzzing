@@ -84,7 +84,7 @@
 //!                 ty: CanisterType::Coverage,
 //!             },
 //!         ],
-//!         "my_fuzzer".to_string(),
+//!         Some("my_fuzzer".to_string()),
 //!     ));
 //!
 //!     fuzzer.run();

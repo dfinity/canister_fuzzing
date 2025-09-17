@@ -35,7 +35,7 @@ k256 = { version = "0.13", features = ["ecdsa-core"] }
 libafl = { version = "0.15.3", features = ["std"] }
 libafl_bolts = "0.15.3"
 once_cell = "1.21.3"
-pocket-ic = "9.0.2"
+pocket-ic = "10.0.0"
 rand = "0.8.5"
 rand_core = "0.9.3"
 serde = "1.0.219"

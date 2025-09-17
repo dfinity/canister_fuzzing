@@ -19,7 +19,7 @@ fn main() {
             wasm_path: WasmPath::EnvVar("MOTOKO_CANISTER_WASM_PATH".to_string()),
             ty: CanisterType::Coverage,
         }],
-        "examples/motoko_shim".to_string(),
+        Some("examples/motoko_shim".to_string()),
     ));
     fuzzer_state.run();
 }

@@ -27,7 +27,7 @@ fn main() {
                 ty: CanisterType::Coverage,
             },
         ],
-        "examples/trap_after_await".to_string(),
+        Some("examples/trap_after_await".to_string()),
     ));
 
     fuzzer_state.run();

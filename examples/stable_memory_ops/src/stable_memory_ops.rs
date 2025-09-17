@@ -18,7 +18,7 @@ fn main() {
             wasm_path: WasmPath::EnvVar("STABLE_MEMORY_WASM_PATH".to_string()),
             ty: CanisterType::Coverage,
         }],
-        "examples/stable_memory_ops".to_string(),
+        Some("examples/stable_memory_ops".to_string()),
     ));
 
     fuzzer_state.run();
