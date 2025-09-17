@@ -36,7 +36,7 @@
 //!   coverage-tracking instrumentation. The `instrument_wasm_for_fuzzing`
 //!   function is called during the `init` phase of your fuzzer.
 //! - [`util`]: Provides helper functions, such as `read_canister_bytes` to load
-//!   Wasm from paths specified by environment variables.
+//!   Wasm from a path, which can be specified directly or via an environment variable.
 //!
 //! ## Getting Started
 //!
@@ -45,7 +45,7 @@
 //! fuzzing campaign.
 //!
 //! ```no_run
-//! use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
+//! use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
 //! use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 //! use canister_fuzzer::libafl::executors::ExitKind;
 //! use canister_fuzzer::libafl::inputs::BytesInput;
@@ -80,7 +80,7 @@
 //!             CanisterInfo {
 //!                 id: None,
 //!                 name: "my_target_canister".to_string(),
-//!                 env_var: "MY_TARGET_CANISTER_WASM_PATH".to_string(),
+//!                 wasm_path: WasmPath::EnvVar("MY_TARGET_CANISTER_WASM_PATH".to_string()),
 //!                 ty: CanisterType::Coverage,
 //!             },
 //!         ],

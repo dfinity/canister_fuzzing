@@ -54,6 +54,7 @@ The framework is composed of a few key modules:
 - **`orchestrator.rs`**: Defines the `FuzzerOrchestrator` trait. You implement this trait to create a fuzzing harness. The `run()` method handles the entire `libafl` setup and execution loop.
 - **`instrumentation.rs`**: Contains the logic to parse a Wasm file and inject coverage-tracking instrumentation. The `instrument_wasm_for_fuzzing` function is called during the `init` phase of your fuzzer.
 - **`util.rs`**: Provides helper functions, such as `read_canister_bytes` to load Wasm from paths specified by environment variables.
+  Wasm from a path, which can be specified directly or via an environment variable.
 
 ## Creating a New Fuzzer
 
@@ -93,7 +94,7 @@ In your example's `main.rs`, implement the `FuzzerOrchestrator` trait.
 
 ```rust
 // examples/my_fuzzer/src/main.rs
-use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState};
+use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::util::{read_canister_bytes, parse_canister_result_for_trap};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
@@ -123,7 +124,7 @@ impl FuzzerOrchestrator for MyFuzzer {
             let canister_id = pic.create_canister();
             pic.add_cycles(canister_id, 2_000_000_000_000);
 
-            let wasm_bytes = read_canister_bytes(&info.env_var);
+            let wasm_bytes = read_canister_bytes(info.wasm_path.clone());
             let module = if info.ty == CanisterType::Coverage {
                 // Instrument the target canister
                 instrument_wasm_for_fuzzing(&wasm_bytes)
@@ -170,7 +171,7 @@ fn main() {
             CanisterInfo {
                 id: None,
                 name: "my_target_canister".to_string(),
-                env_var: "MY_TARGET_CANISTER_WASM_PATH".to_string(),
+                wasm_path: WasmPath::EnvVar("MY_TARGET_CANISTER_WASM_PATH".to_string()),
                 ty: CanisterType::Coverage,
             },
             // Add other canisters here if needed

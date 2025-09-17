@@ -25,7 +25,7 @@ pub struct CanisterInfo {
     pub id: Option<CanisterId>,
     /// A unique friendly name to identify the canister within the fuzzer.
     pub name: String,
-    /// The name of the environment variable that holds the path to the canister's Wasm module.
+    /// The path to the canister's Wasm module, specified either directly or via an environment variable.
     pub wasm_path: WasmPath,
     /// The type of the canister, indicating its role in the fuzzing setup.
     pub ty: CanisterType,
@@ -41,10 +41,12 @@ pub enum CanisterType {
     Support,
 }
 
-/// Defines the role of a canister in the fuzzing setup.
+/// Specifies how to locate a canister's Wasm module.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum WasmPath {
+    /// The Wasm path is stored in an environment variable.
     EnvVar(String),
+    /// The Wasm path is a direct file path.
     Path(PathBuf),
 }
 
@@ -119,7 +121,7 @@ impl FuzzerState {
             .unwrap_or_else(|| panic!("CanisterId is not initialized for {name}"))
     }
 
-    /// Retrieves the environment variable name for a canister's Wasm path by its friendly name.
+    /// Retrieves a canister's Wasm path by its friendly name.
     ///
     /// # Panics
     ///
