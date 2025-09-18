@@ -48,12 +48,12 @@ pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8], history_size: usize) -> Ve
         matches!(history_size, 1 | 2 | 4 | 8),
         "History size must be 1, 2, 4, or 8"
     );
-    let mut module =
-        Module::parse(wasm_bytes, false).expect("Failed to parse module with wirm");
+    let mut module = Module::parse(wasm_bytes, false).expect("Failed to parse module with wirm");
 
     instrument_for_afl(&mut module, history_size)
         .expect("Unable to instrument wasm module for AFL");
 
+    // Sorry it has to be this way :(
     let buf = vec![0u8; AFL_COVERAGE_MAP_SIZE as usize * history_size].into_boxed_slice();
     let buf: &'static mut [u8] = Box::leak(buf);
     unsafe {

@@ -55,17 +55,14 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
 
         let ledger_canister_id = test.create_canister();
         test.add_cycles(ledger_canister_id, u128::MAX / 2);
-        let module = instrument_wasm_for_fuzzing(
-            &read_canister_bytes(self.0.get_canister_wasm_path_by_name("ledger").clone()),
-            2,
-        );
+        let module = read_canister_bytes(self.0.get_canister_wasm_path_by_name("ledger").clone());
         test.install_canister(ledger_canister_id, module, vec![], None);
 
         let main_canister_id = test.create_canister();
         test.add_cycles(main_canister_id, u128::MAX / 2);
         let module = instrument_wasm_for_fuzzing(
             &read_canister_bytes(self.0.get_canister_wasm_path_by_name("transfer").clone()),
-            2,
+            8,
         );
         test.install_canister(
             main_canister_id,

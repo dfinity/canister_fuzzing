@@ -45,7 +45,7 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
             let canister_id = test.create_canister();
             test.add_cycles(canister_id, 5_000_000_000_000);
             let module =
-                instrument_wasm_for_fuzzing(&read_canister_bytes(info.wasm_path.clone()), 8);
+                instrument_wasm_for_fuzzing(&read_canister_bytes(info.wasm_path.clone()), 4);
             test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);
         }
