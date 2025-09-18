@@ -33,19 +33,8 @@ use crate::libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use crate::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
-use crate::constants::{AFL_COVERAGE_MAP_SIZE, COVERAGE_FN_EXPORT_NAME};
+use crate::constants::COVERAGE_FN_EXPORT_NAME;
 use crate::fuzzer::FuzzerState;
-
-/// A global, mutable static array to hold the coverage map.
-///
-/// # Safety
-///
-/// This is a raw pointer to a mutable static memory region, which is inherently `unsafe`.
-/// It is used as a shared memory region between the fuzzer and the instrumented canister.
-/// The `libafl` framework is designed to work with such a mechanism, which is a highly
-/// optimized approach for coverage-guided fuzzing, inspired by AFL.
-/// Access to this map is carefully controlled within the fuzzing loop.
-static mut COVERAGE_MAP: &mut [u8] = &mut [0; AFL_COVERAGE_MAP_SIZE as usize];
 
 /// A trait for types that can provide access to the global `FuzzerState`.
 pub trait FuzzerStateProvider {
@@ -174,13 +163,13 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
             vec![],
         );
         if let Ok(result) = result {
-            unsafe { COVERAGE_MAP.copy_from_slice(&result) };
+            unsafe { crate::instrumentation::COVERAGE_MAP.copy_from_slice(&result) };
         }
     }
 
     /// Provides a mutable reference to the global `COVERAGE_MAP`.
     fn get_coverage_map(&self) -> &'static mut [u8] {
-        unsafe { COVERAGE_MAP }
+        unsafe { crate::instrumentation::COVERAGE_MAP }
     }
 
     /// The main entry point for running a fuzzing campaign.

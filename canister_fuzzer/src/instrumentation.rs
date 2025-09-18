@@ -22,16 +22,43 @@ use wirm::{DataType, InitInstr, Module, Opcode};
 
 use crate::constants::{AFL_COVERAGE_MAP_SIZE, API_VERSION_IC0, COVERAGE_FN_EXPORT_NAME};
 
+/// A global, mutable static array to hold the coverage map.
+///
+/// # Safety
+///
+/// This is a raw pointer to a mutable static memory region, which is inherently `unsafe`.
+/// It is used as a shared memory region between the fuzzer and the instrumented canister.
+/// The `libafl` framework is designed to work with such a mechanism, which is a highly
+/// optimized approach for coverage-guided fuzzing, inspired by AFL.
+/// Access to this map is carefully controlled within the fuzzing loop.
+pub static mut COVERAGE_MAP: &mut [u8] = &mut [0; AFL_COVERAGE_MAP_SIZE as usize];
+
 /// Instruments the given Wasm bytes for fuzzing.
 ///
 /// This function takes a raw Wasm module, applies AFL-style instrumentation for
 /// coverage tracking, and returns the instrumented Wasm module as a vector of bytes.
 /// The resulting Wasm is validated before being returned.
-pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8]) -> Vec<u8> {
+///
+/// # Arguments
+///
+/// * `wasm_bytes` - The raw Wasm module to instrument.
+/// * `history_size` - The number of previous locations to track (must be 1, 2, 4, or 8).
+pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8], history_size: usize) -> Vec<u8> {
+    assert!(
+        matches!(history_size, 1 | 2 | 4 | 8),
+        "History size must be 1, 2, 4, or 8"
+    );
     let mut module =
-        Module::parse(wasm_bytes, false).expect("Failed to parse module with ic-wasm-transform");
+        Module::parse(wasm_bytes, false).expect("Failed to parse module with wirm");
 
-    instrument_for_afl(&mut module).expect("Unable to instrument wasm module for AFL");
+    instrument_for_afl(&mut module, history_size)
+        .expect("Unable to instrument wasm module for AFL");
+
+    let buf = vec![0u8; AFL_COVERAGE_MAP_SIZE as usize * history_size].into_boxed_slice();
+    let buf: &'static mut [u8] = Box::leak(buf);
+    unsafe {
+        COVERAGE_MAP = buf;
+    }
 
     let instrumented_wasm = module.encode();
 
@@ -47,16 +74,16 @@ pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8]) -> Vec<u8> {
 /// 2. Injects the `export_coverage` query function to expose the coverage map.
 /// 3. Instruments all functions by inserting calls to a helper function at the
 ///    start of each function and before each branch instruction.
-fn instrument_for_afl(module: &mut Module<'_>) -> Result<()> {
-    let (afl_prev_loc_idx_0, afl_prev_loc_idx_1, afl_mem_ptr_idx) = inject_globals(module);
+fn instrument_for_afl(module: &mut Module<'_>, history_size: usize) -> Result<()> {
+    let (afl_prev_loc_indices, afl_mem_ptr_idx) = inject_globals(module, history_size);
     println!(
-        "  -> Injected globals: prev_loc @ index {afl_prev_loc_idx_0:?} & {afl_prev_loc_idx_1:?}, mem_ptr @ index {afl_mem_ptr_idx:?}"
+        "  -> Injected globals: prev_locs @ indices {afl_prev_loc_indices:?}, mem_ptr @ index {afl_mem_ptr_idx:?}"
     );
 
-    inject_afl_coverage_export(module, afl_mem_ptr_idx)?;
+    inject_afl_coverage_export(module, history_size, afl_mem_ptr_idx)?;
     println!("  -> Injected `canister_query export_coverage` function.");
 
-    instrument_branches(module, afl_prev_loc_idx_0, afl_prev_loc_idx_1, afl_mem_ptr_idx);
+    instrument_branches(module, &afl_prev_loc_indices, afl_mem_ptr_idx);
     println!("  -> Instrumented branch instructions in all functions.");
 
     Ok(())
@@ -64,29 +91,28 @@ fn instrument_for_afl(module: &mut Module<'_>) -> Result<()> {
 
 /// Injects the necessary global variables for AFL instrumentation.
 ///
-/// - `__afl_prev_loc`: A mutable i32 global to store the ID of the previously executed
-///   basic block. This is used to track edges in the control flow graph.
+/// - `__afl_prev_loc_N`: A set of `history_size` mutable i32 globals to store the IDs
+///   of the previously executed basic blocks. This is used to track execution history
+///   in the control flow graph.
 /// - `__afl_mem_ptr`: An immutable i32 global that holds the base address (0) of the coverage map.
-fn inject_globals(module: &mut Module<'_>) -> (GlobalID, GlobalID, GlobalID) {
-    let afl_prev_loc_idx_0 = module.add_global(
-        InitExpr::new(vec![InitInstr::Value(Value::I32(0))]),
-        DataType::I32,
-        true,
-        false,
-    );
-    let afl_prev_loc_idx_1 = module.add_global(
-        InitExpr::new(vec![InitInstr::Value(Value::I32(0))]),
-        DataType::I32,
-        true,
-        false,
-    );
+fn inject_globals(module: &mut Module<'_>, history_size: usize) -> (Vec<GlobalID>, GlobalID) {
+    let mut afl_prev_loc_indices = Vec::with_capacity(history_size);
+    for _ in 0..history_size {
+        let global_id = module.add_global(
+            InitExpr::new(vec![InitInstr::Value(Value::I32(0))]),
+            DataType::I32,
+            true,
+            false,
+        );
+        afl_prev_loc_indices.push(global_id);
+    }
     let afl_mem_ptr_idx = module.add_global(
         InitExpr::new(vec![InitInstr::Value(Value::I32(0))]),
         DataType::I32,
         false,
         false,
     );
-    (afl_prev_loc_idx_0, afl_prev_loc_idx_1, afl_mem_ptr_idx)
+    (afl_prev_loc_indices, afl_mem_ptr_idx)
 }
 
 /// Injects the `canister_query export_coverage` function.
@@ -97,6 +123,7 @@ fn inject_globals(module: &mut Module<'_>) -> (GlobalID, GlobalID, GlobalID) {
 /// back to the caller.
 fn inject_afl_coverage_export<'a>(
     module: &mut Module<'a>,
+    history_size: usize,
     afl_mem_ptr_idx: GlobalID,
 ) -> Result<()> {
     let (msg_reply_data_append_idx, msg_reply_idx) = ensure_ic0_imports(module)?;
@@ -104,7 +131,7 @@ fn inject_afl_coverage_export<'a>(
     let mut func_builder = FunctionBuilder::new(&[], &[]);
     func_builder
         .global_get(afl_mem_ptr_idx)
-        .i32_const(AFL_COVERAGE_MAP_SIZE)
+        .i32_const(AFL_COVERAGE_MAP_SIZE * history_size as i32)
         .call(msg_reply_data_append_idx)
         .call(msg_reply_idx);
     let coverage_function_id = func_builder.finish_module(module);
@@ -125,12 +152,11 @@ fn inject_afl_coverage_export<'a>(
 /// This ensures that every basic block is instrumented.
 fn instrument_branches(
     module: &mut Module<'_>,
-    afl_prev_loc_idx_0: GlobalID,
-    afl_prev_loc_idx_1: GlobalID,
+    afl_prev_loc_indices: &[GlobalID],
     afl_mem_ptr_idx: GlobalID,
 ) {
     let instrumentation_function =
-        afl_instrumentation_slice(module, afl_prev_loc_idx_0, afl_prev_loc_idx_1, afl_mem_ptr_idx);
+        afl_instrumentation_slice(module, afl_prev_loc_indices, afl_mem_ptr_idx);
     let mut rng = rand::thread_rng();
 
     for (function_index, function) in module.functions.iter_mut().enumerate() {
@@ -141,7 +167,8 @@ fn instrument_branches(
             let mut new_instructions = Vec::with_capacity(local_function.body.num_instructions * 2);
 
             // Instrument the start of the function
-            let curr_location = rng.gen_range(0..AFL_COVERAGE_MAP_SIZE);
+            let curr_location =
+                rng.gen_range(0..AFL_COVERAGE_MAP_SIZE * afl_prev_loc_indices.len() as i32);
             new_instructions.extend([
                 Operator::I32Const {
                     value: curr_location,
@@ -161,7 +188,9 @@ fn instrument_branches(
                     | Operator::Br { .. }
                     | Operator::BrIf { .. }
                     | Operator::BrTable { .. } => {
-                        let curr_location = rng.gen_range(0..AFL_COVERAGE_MAP_SIZE);
+                        let curr_location = rng.gen_range(
+                            0..AFL_COVERAGE_MAP_SIZE * afl_prev_loc_indices.len() as i32,
+                        );
                         new_instructions.extend([
                             Operator::I32Const {
                                 value: curr_location,
@@ -184,10 +213,13 @@ fn instrument_branches(
 ///
 /// This function will be called from instrumented locations (start of functions, before branches).
 /// It implements the standard AFL coverage tracking mechanism:
-/// ```c
+/// ```text
 ///   curr_location = <COMPILE_TIME_RANDOM>;
-///   shared_mem[curr_location ^ prev_location]++;
-///   prev_location = curr_location >> 1;
+///   key = curr_location ^ prev_loc[0] ^ ... ^ prev_loc[history_size-1];
+///   shared_mem[key]++;
+///   prev_loc[history_size-1] = prev_loc[history_size-2] >> 1;
+///   ...
+///   prev_loc[0] = curr_location >> 1;
 /// ```
 /// The generated function takes the current location (`curr_location`) as an i32 parameter
 /// and is added to the module.
@@ -197,20 +229,19 @@ fn instrument_branches(
 /// The `FunctionID` of the newly created helper function.
 fn afl_instrumentation_slice(
     module: &mut Module<'_>,
-    afl_prev_loc_idx_0: GlobalID,
-    afl_prev_loc_idx_1: GlobalID,
+    afl_prev_loc_indices: &[GlobalID],
     afl_mem_ptr_idx: GlobalID,
 ) -> FunctionID {
     let mut func_builder = FunctionBuilder::new(&[DataType::I32], &[]);
     let curr_location = LocalID(0);
     let afl_local_idx = func_builder.add_local(DataType::I32);
 
+    func_builder.local_get(curr_location);
+    for &prev_loc_idx in afl_prev_loc_indices {
+        func_builder.global_get(prev_loc_idx).i32_xor();
+    }
+
     func_builder
-        .local_get(curr_location)
-        .global_get(afl_prev_loc_idx_0)
-        .i32_xor()
-        .global_get(afl_prev_loc_idx_1)
-        .i32_xor()
         .global_get(afl_mem_ptr_idx)
         .i32_add()
         .local_tee(afl_local_idx)
@@ -228,15 +259,22 @@ fn afl_instrumentation_slice(
             align: 0,
             memory: 0,
             max_align: 0,
-        })
-        .global_get(afl_prev_loc_idx_0)
-        .i32_const(1)
-        .i32_shr_unsigned()
-        .global_set(afl_prev_loc_idx_1)
+        });
+
+    // Shift the history
+    for i in (1..afl_prev_loc_indices.len()).rev() {
+        func_builder
+            .global_get(afl_prev_loc_indices[i - 1])
+            .i32_const(1)
+            .i32_shr_unsigned()
+            .global_set(afl_prev_loc_indices[i]);
+    }
+
+    func_builder
         .local_get(curr_location)
         .i32_const(1)
         .i32_shr_unsigned()
-        .global_set(afl_prev_loc_idx_0);
+        .global_set(afl_prev_loc_indices[0]);
 
     func_builder.finish_module(module)
 }

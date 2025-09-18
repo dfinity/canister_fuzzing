@@ -53,6 +53,7 @@ The framework is composed of a few key modules:
 - **`fuzzer.rs`**: Defines `FuzzerState`, which holds the `PocketIc` instance and information about all canisters under test.
 - **`orchestrator.rs`**: Defines the `FuzzerOrchestrator` trait. You implement this trait to create a fuzzing harness. The `run()` method handles the entire `libafl` setup and execution loop.
 - **`instrumentation.rs`**: Contains the logic to parse a Wasm file and inject coverage-tracking instrumentation. The `instrument_wasm_for_fuzzing` function is called during the `init` phase of your fuzzer.
+- **`instrumentation.rs`**: Contains the logic to parse a Wasm file and inject coverage-tracking instrumentation. The `instrument_wasm_for_fuzzing` function is called during the `init` phase of your fuzzer. It supports a configurable history size for more flexible coverage tracking.
 - **`util.rs`**: Provides helper functions, such as `read_canister_bytes` to load Wasm from paths specified by environment variables.
   Wasm from a path, which can be specified directly or via an environment variable.
 
@@ -126,8 +127,9 @@ impl FuzzerOrchestrator for MyFuzzer {
 
             let wasm_bytes = read_canister_bytes(info.wasm_path.clone());
             let module = if info.ty == CanisterType::Coverage {
-                // Instrument the target canister
-                instrument_wasm_for_fuzzing(&wasm_bytes)
+                // Instrument the target canister.
+                // The second argument is the history size (must be 1, 2, 4, or 8).
+                instrument_wasm_for_fuzzing(&wasm_bytes, 2)
             } else {
                 wasm_bytes
             };
