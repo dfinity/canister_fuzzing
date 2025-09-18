@@ -34,7 +34,7 @@
 //!   `libafl` setup and execution loop.
 //! - [`instrumentation`]: Contains the logic to parse a Wasm file and inject
 //!   coverage-tracking instrumentation. The `instrument_wasm_for_fuzzing`
-//!   function is called during the `init` phase of your fuzzer.
+//!   function is called during the `init` phase of your fuzzer. It supports a configurable history size for more flexible coverage tracking.
 //! - [`util`]: Provides helper functions, such as `read_canister_bytes` to load
 //!   Wasm from a path, which can be specified directly or via an environment variable.
 //!
