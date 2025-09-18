@@ -14,6 +14,7 @@ use pocket_ic::PocketIcBuilder;
 use slog::Level;
 use std::fs::{self, File};
 use std::io::Read;
+use std::path::PathBuf;
 use std::ptr::addr_of;
 use std::time::Duration;
 
@@ -38,13 +39,13 @@ use canister_fuzzer::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple
 
 fn main() {
     let mut fuzzer_state = DecodeCandidFuzzer(FuzzerState::new(
+        "decode_candid_by_instructions",
         vec![CanisterInfo {
             id: None,
             name: "candid_decode".to_string(),
             wasm_path: WasmPath::EnvVar("DECODE_CANDID_WASM_PATH".to_string()),
             ty: CanisterType::Coverage,
         }],
-        Some("examples/decode_candid_by_instructions".to_string()),
     ));
 
     fuzzer_state.run();
@@ -59,6 +60,15 @@ impl FuzzerStateProvider for DecodeCandidFuzzer {
 }
 
 impl FuzzerOrchestrator for DecodeCandidFuzzer {
+    fn corpus_dir(&self) -> std::path::PathBuf {
+        PathBuf::from(file!())
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("corpus")
+    }
+
     fn init(&mut self) {
         let test = PocketIcBuilder::new()
             .with_application_subnet()

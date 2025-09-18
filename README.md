@@ -42,9 +42,9 @@ The framework includes several examples in the `examples/` directory. To run the
     You will see `libafl`'s status screen, showing statistics like executions per second, total executions, and coverage.
 
 3.  **Check the Artifacts:**
-    Interesting inputs and crashes are saved in the `target/artifacts/` directory.
-    - **Corpus**: `target/artifacts/examples/stable_memory_ops/<timestamp>/input/` contains inputs that discovered new code coverage.
-    - **Crashes**: `target/artifacts/examples/stable_memory_ops/<timestamp>/crashes/` contains inputs that caused a panic or returned an `ExitKind::Crash`.
+    Interesting inputs and crashes are saved in a timestamped directory inside `target/`. The exact path, which looks something like `target/debug/build/<example-name>-<hash>/out/artifacts/...`, is printed to the console when the fuzzer starts.
+    - **Corpus**: Inputs that discovered new code coverage are saved in the `input` subdirectory.
+    - **Crashes**: Inputs that caused a panic or returned an `ExitKind::Crash` are saved in the `crashes` subdirectory.
 
 ## How It Works
 
@@ -52,16 +52,17 @@ The framework is composed of a few key modules:
 
 - **`fuzzer.rs`**: Defines `FuzzerState`, which holds the `PocketIc` instance and information about all canisters under test.
 - **`orchestrator.rs`**: Defines the `FuzzerOrchestrator` trait. You implement this trait to create a fuzzing harness. The `run()` method handles the entire `libafl` setup and execution loop.
-- **`instrumentation.rs`**: Contains the logic to parse a Wasm file and inject coverage-tracking instrumentation. The `instrument_wasm_for_fuzzing` function is called during the `init` phase of your fuzzer.
 - **`instrumentation.rs`**: Contains the logic to parse a Wasm file and inject coverage-tracking instrumentation. The `instrument_wasm_for_fuzzing` function is called during the `init` phase of your fuzzer. It supports a configurable history size for more flexible coverage tracking.
-- **`util.rs`**: Provides helper functions, such as `read_canister_bytes` to load Wasm from paths specified by environment variables.
-  Wasm from a path, which can be specified directly or via an environment variable.
+- **`util.rs`**: Provides helper functions, such as `read_canister_bytes` to load Wasm from a path, which can be specified directly or via an environment variable.
 
 ## Creating a New Fuzzer
 
 Follow these steps to create a new fuzzer for your canisters.
 
 ### 1. Set Up the Crate and Canisters
+
+> [!WARNING]  
+> This is only necessary if you need a build script for building your canister. In most cases, you can directly specify the wasm via WasmPath::Path(path).
 
 1.  **Create a Crate**: Add a new binary crate in the `examples/` directory (e.g., `my_fuzzer`).
 2.  **Add Canisters**: Place your canister source code (Rust or Motoko) in the `canisters/` directory.
@@ -101,6 +102,7 @@ use canister_fuzzer::util::{read_canister_bytes, parse_canister_result_for_trap}
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::libafl::executors::ExitKind;
 use canister_fuzzer::libafl::inputs::BytesInput;
+use std::path::PathBuf;
 use pocket_ic::{PocketIcBuilder, PocketIc};
 use candid::Principal;
 
@@ -138,6 +140,11 @@ impl FuzzerOrchestrator for MyFuzzer {
         }
     }
 
+    fn corpus_dir(&self) -> PathBuf {
+        // Path to the seed corpus for this fuzzer.
+        PathBuf::from(file!()).parent().unwrap().join("corpus")
+    }
+
     fn execute(&self, input: BytesInput) -> ExitKind {
         let pic = self.get_state_machine();
         let target_canister = self.get_coverage_canister_id();
@@ -169,6 +176,7 @@ impl FuzzerOrchestrator for MyFuzzer {
 // 4. The main function to set up and run the fuzzer
 fn main() {
     let mut fuzzer = MyFuzzer(FuzzerState::new(
+        "my_fuzzer",
         vec![
             CanisterInfo {
                 id: None,
@@ -178,7 +186,6 @@ fn main() {
             },
             // Add other canisters here if needed
         ],
-        Some("examples/my_fuzzer".to_string()),
     ));
 
     fuzzer.run();
@@ -201,6 +208,7 @@ When the fuzzer finds a crash, it saves the input that caused it to the `crashes
 
     fn main() {
         let mut fuzzer = MyFuzzer(FuzzerState::new(
+            "my_fuzzer",
             vec![
                 CanisterInfo {
                     id: None,
@@ -210,15 +218,14 @@ When the fuzzer finds a crash, it saves the input that caused it to the `crashes
                 },
                 // Add other canisters here if needed
             ],
-            Some("examples/my_fuzzer".to_string()),
         ));
 
         // To run the fuzzer:
         // fuzzer.run();
 
         // To reproduce and debug a specific crash:
-        // 1. Update the path to your crash file.
-        let crash_input_path = "target/artifacts/examples/my_fuzzer/20240101_120000/crashes/some_input_hash";
+        // 1. Update the path to your crash file. The path is printed when the fuzzer starts.
+        let crash_input_path = "target/debug/build/my_fuzzer-abcdef123456/out/artifacts/my_fuzzer/20240101_1200/crashes/some_input_hash";
         let crash_input = fs::read(crash_input_path).expect("Could not read crash file");
 
         // 2. Call test_one_input with the crash data.

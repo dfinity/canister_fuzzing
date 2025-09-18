@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use candid::{Decode, Encode, Principal};
 use canister_fuzzer::libafl::executors::ExitKind;
 use canister_fuzzer::libafl::inputs::ValueInput;
@@ -15,6 +17,7 @@ static SNAPSHOT: OnceCell<(Vec<u8>, Vec<u8>)> = OnceCell::new();
 
 fn main() {
     let mut fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState::new(
+        "trap_after_await",
         vec![
             CanisterInfo {
                 id: None,
@@ -29,7 +32,6 @@ fn main() {
                 ty: CanisterType::Coverage,
             },
         ],
-        Some("examples/trap_after_await".to_string()),
     ));
 
     fuzzer_state.run();
@@ -44,6 +46,15 @@ impl FuzzerStateProvider for TrapAfterAwaitFuzzer {
 }
 
 impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
+    fn corpus_dir(&self) -> std::path::PathBuf {
+        PathBuf::from(file!())
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("corpus")
+    }
+
     fn init(&mut self) {
         let test = PocketIcBuilder::new()
             .with_application_subnet()
