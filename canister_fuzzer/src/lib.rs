@@ -49,6 +49,7 @@
 //! use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 //! use canister_fuzzer::libafl::executors::ExitKind;
 //! use canister_fuzzer::libafl::inputs::BytesInput;
+//! use std::path::PathBuf;
 //!
 //! // 1. Define a struct to hold the FuzzerState
 //! struct MyFuzzer(FuzzerState);
@@ -65,6 +66,11 @@
 //!         println!("Canisters installed");
 //!     }
 //!
+//!     fn corpus_dir(&self) -> PathBuf {
+//!         // Path to the seed corpus for this fuzzer
+//!         PathBuf::from("./corpus")
+//!     }
+//!
 //!     fn execute(&self, input: BytesInput) -> ExitKind {
 //!         // ... execute a canister call with the input ...
 //!         let payload: Vec<u8> = input.into();
@@ -76,6 +82,7 @@
 //! // 4. The main function to set up and run the fuzzer
 //! fn main() {
 //!     let mut fuzzer = MyFuzzer(FuzzerState::new(
+//!         "my_fuzzer",
 //!         vec![
 //!             CanisterInfo {
 //!                 id: None,
@@ -84,7 +91,6 @@
 //!                 ty: CanisterType::Coverage,
 //!             },
 //!         ],
-//!         Some("my_fuzzer".to_string()),
 //!     ));
 //!
 //!     fuzzer.run();

@@ -76,16 +76,16 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         self.get_fuzzer_state().get_coverage_canister_id()
     }
 
-    /// Creates and returns the path to a new timestamped directory for storing solutions.
+    /// Creates and returns the path to a new timestamped directory for storing input items.
     ///
-    /// The directory is structured as `target/artifacts/<fuzzer_dir>/<timestamp>/input`,
-    /// where `<timestamp>` is based on the current time.
+    /// The directory is structured as `$OUT_DIR/artifacts/<fuzzer_name>/<timestamp>/input`,
+    /// where `$OUT_DIR` is the build script output directory (e.g., `target/debug/build/.../out`),
+    /// `<fuzzer_name>` is the name provided to `FuzzerState::new`, and `<timestamp>` is based
+    /// on the current time.
     ///
     /// # Panics
     ///
-    /// Panics if `fuzzer_dir` was not provided in `FuzzerState::new`. In this case,
-    /// you must override this method with your own implementation.
-    /// Panics if the directory cannot be created.
+    /// Panics if the `OUT_DIR` environment variable is not set or if the directory cannot be created.
     fn input_dir(&self) -> PathBuf {
         let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR is not set");
         let input_dir = PathBuf::from(out_dir)
@@ -99,16 +99,16 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         input_dir
     }
 
-    /// Creates and returns the path to a new timestamped directory for storing crashing inputs.
+    /// Creates and returns the path to a new timestamped directory for storing crashes.
     ///
-    /// The directory is structured as `target/artifacts/<fuzzer_dir>/<timestamp>/crashes`,
-    /// where `<timestamp>` is based on the current time.
+    /// The directory is structured as `$OUT_DIR/artifacts/<fuzzer_name>/<timestamp>/crashes`,
+    /// where `$OUT_DIR` is the build script output directory (e.g., `target/debug/build/.../out`),
+    /// `<fuzzer_name>` is the name provided to `FuzzerState::new`, and `<timestamp>` is based
+    /// on the current time.
     ///
     /// # Panics
     ///
-    /// Panics if `fuzzer_dir` was not provided in `FuzzerState::new`. In this case,
-    /// you must override this method with your own implementation.
-    /// Panics if the directory cannot be created.
+    /// Panics if the `OUT_DIR` environment variable is not set or if the directory cannot be created.
     fn crashes_dir(&self) -> PathBuf {
         let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR is not set");
         let crashes_dir = PathBuf::from(out_dir)

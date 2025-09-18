@@ -6,7 +6,8 @@ use std::{path::PathBuf, slice::IterMut};
 /// Represents the global state for a fuzzing campaign.
 ///
 /// This struct holds a reference to the `PocketIc` instance (the IC state machine), a list of all
-/// canisters under test, and the directory for fuzzer-specific artifacts.
+/// canisters under test, and a name for the fuzzer, which is used to create directories for
+/// artifacts like the input and crashes.
 pub struct FuzzerState {
     name: String,
     /// The `PocketIc` instance used to execute canister calls in a simulated environment.
@@ -54,7 +55,8 @@ impl FuzzerState {
     ///
     /// # Arguments
     ///
-    /// * `canisters` - A vector of `CanisterInfo` structs, one for each canister to be fuzzed.
+    /// * `name` - A unique name for the fuzzer, used for artifact directories.
+    /// * `canisters` - A vector of `CanisterInfo` structs, one for each canister involved in the test.
     pub fn new(name: &str, canisters: Vec<CanisterInfo>) -> Self {
         assert!(
             canisters
