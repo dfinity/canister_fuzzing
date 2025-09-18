@@ -48,15 +48,15 @@ pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8]) -> Vec<u8> {
 /// 3. Instruments all functions by inserting calls to a helper function at the
 ///    start of each function and before each branch instruction.
 fn instrument_for_afl(module: &mut Module<'_>) -> Result<()> {
-    let (afl_prev_loc_idx, afl_mem_ptr_idx) = inject_globals(module);
+    let (afl_prev_loc_idx_0, afl_prev_loc_idx_1, afl_mem_ptr_idx) = inject_globals(module);
     println!(
-        "  -> Injected globals: prev_loc @ index {afl_prev_loc_idx:?}, mem_ptr @ index {afl_mem_ptr_idx:?}"
+        "  -> Injected globals: prev_loc @ index {afl_prev_loc_idx_0:?} & {afl_prev_loc_idx_1:?}, mem_ptr @ index {afl_mem_ptr_idx:?}"
     );
 
     inject_afl_coverage_export(module, afl_mem_ptr_idx)?;
     println!("  -> Injected `canister_query export_coverage` function.");
 
-    instrument_branches(module, afl_prev_loc_idx, afl_mem_ptr_idx);
+    instrument_branches(module, afl_prev_loc_idx_0, afl_prev_loc_idx_1, afl_mem_ptr_idx);
     println!("  -> Instrumented branch instructions in all functions.");
 
     Ok(())
@@ -67,8 +67,14 @@ fn instrument_for_afl(module: &mut Module<'_>) -> Result<()> {
 /// - `__afl_prev_loc`: A mutable i32 global to store the ID of the previously executed
 ///   basic block. This is used to track edges in the control flow graph.
 /// - `__afl_mem_ptr`: An immutable i32 global that holds the base address (0) of the coverage map.
-fn inject_globals(module: &mut Module<'_>) -> (GlobalID, GlobalID) {
-    let afl_prev_loc_idx = module.add_global(
+fn inject_globals(module: &mut Module<'_>) -> (GlobalID, GlobalID, GlobalID) {
+    let afl_prev_loc_idx_0 = module.add_global(
+        InitExpr::new(vec![InitInstr::Value(Value::I32(0))]),
+        DataType::I32,
+        true,
+        false,
+    );
+    let afl_prev_loc_idx_1 = module.add_global(
         InitExpr::new(vec![InitInstr::Value(Value::I32(0))]),
         DataType::I32,
         true,
@@ -80,7 +86,7 @@ fn inject_globals(module: &mut Module<'_>) -> (GlobalID, GlobalID) {
         false,
         false,
     );
-    (afl_prev_loc_idx, afl_mem_ptr_idx)
+    (afl_prev_loc_idx_0, afl_prev_loc_idx_1, afl_mem_ptr_idx)
 }
 
 /// Injects the `canister_query export_coverage` function.
@@ -119,11 +125,12 @@ fn inject_afl_coverage_export<'a>(
 /// This ensures that every basic block is instrumented.
 fn instrument_branches(
     module: &mut Module<'_>,
-    afl_prev_loc_idx: GlobalID,
+    afl_prev_loc_idx_0: GlobalID,
+    afl_prev_loc_idx_1: GlobalID,
     afl_mem_ptr_idx: GlobalID,
 ) {
     let instrumentation_function =
-        afl_instrumentation_slice(module, afl_prev_loc_idx, afl_mem_ptr_idx);
+        afl_instrumentation_slice(module, afl_prev_loc_idx_0, afl_prev_loc_idx_1, afl_mem_ptr_idx);
     let mut rng = rand::thread_rng();
 
     for (function_index, function) in module.functions.iter_mut().enumerate() {
@@ -190,7 +197,8 @@ fn instrument_branches(
 /// The `FunctionID` of the newly created helper function.
 fn afl_instrumentation_slice(
     module: &mut Module<'_>,
-    afl_prev_loc_idx: GlobalID,
+    afl_prev_loc_idx_0: GlobalID,
+    afl_prev_loc_idx_1: GlobalID,
     afl_mem_ptr_idx: GlobalID,
 ) -> FunctionID {
     let mut func_builder = FunctionBuilder::new(&[DataType::I32], &[]);
@@ -199,7 +207,9 @@ fn afl_instrumentation_slice(
 
     func_builder
         .local_get(curr_location)
-        .global_get(afl_prev_loc_idx)
+        .global_get(afl_prev_loc_idx_0)
+        .i32_xor()
+        .global_get(afl_prev_loc_idx_1)
         .i32_xor()
         .global_get(afl_mem_ptr_idx)
         .i32_add()
@@ -219,10 +229,14 @@ fn afl_instrumentation_slice(
             memory: 0,
             max_align: 0,
         })
+        .global_get(afl_prev_loc_idx_0)
+        .i32_const(1)
+        .i32_shr_unsigned()
+        .global_set(afl_prev_loc_idx_1)
         .local_get(curr_location)
         .i32_const(1)
         .i32_shr_unsigned()
-        .global_set(afl_prev_loc_idx);
+        .global_set(afl_prev_loc_idx_0);
 
     func_builder.finish_module(module)
 }
