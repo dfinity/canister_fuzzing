@@ -1,22 +1,20 @@
 use ic_management_canister_types::CanisterId;
 use pocket_ic::PocketIc;
 use std::sync::Arc;
-use std::{env, path::PathBuf, slice::IterMut};
+use std::{path::PathBuf, slice::IterMut};
 
 /// Represents the global state for a fuzzing campaign.
 ///
 /// This struct holds a reference to the `PocketIc` instance (the IC state machine), a list of all
 /// canisters under test, and the directory for fuzzer-specific artifacts.
 pub struct FuzzerState {
+    name: String,
     /// The `PocketIc` instance used to execute canister calls in a simulated environment.
     /// It's wrapped in an `Arc` to allow shared, thread-safe access, and an `Option`
     /// because it's initialized after the `FuzzerState` is created.
     state: Option<Arc<PocketIc>>,
     /// A list of all canisters involved in the fuzzing setup.
     canisters: Vec<CanisterInfo>,
-    /// The name of the fuzzer-specific directory. If `None`, the user must
-    /// implement their own artifact and corpus directory logic.
-    fuzzer_dir: Option<String>,
 }
 
 /// Contains information describing a single canister used in the fuzzer.
@@ -57,10 +55,7 @@ impl FuzzerState {
     /// # Arguments
     ///
     /// * `canisters` - A vector of `CanisterInfo` structs, one for each canister to be fuzzed.
-    /// * `fuzzer_dir` - An optional string identifying the directory for this fuzzer's artifacts.
-    ///   If `None`, you must override `corpus_dir`, `crashes_dir`, and `input_dir` in your
-    ///   `FuzzerOrchestrator` implementation.
-    pub fn new(canisters: Vec<CanisterInfo>, fuzzer_dir: Option<String>) -> Self {
+    pub fn new(name: &str, canisters: Vec<CanisterInfo>) -> Self {
         assert!(
             canisters
                 .iter()
@@ -70,15 +65,19 @@ impl FuzzerState {
             "Only one coverage canister is allowed"
         );
         Self {
+            name: name.to_string(),
             state: None,
             canisters,
-            fuzzer_dir,
         }
     }
 
     /// Initializes the state machine for the fuzzer.
     pub fn init_state(&mut self, state: PocketIc) {
         self.state = Some(Arc::new(state));
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Returns the `CanisterId` of the coverage canister.
@@ -102,11 +101,6 @@ impl FuzzerState {
     /// Panics if the state machine has not been initialized via `init_state`.
     pub(crate) fn get_state_machine(&self) -> Arc<PocketIc> {
         self.state.as_ref().unwrap().clone()
-    }
-
-    /// Returns the fuzzer-specific directory name, if provided.
-    pub(crate) fn get_fuzzer_dir(&self) -> Option<String> {
-        self.fuzzer_dir.clone()
     }
 
     /// Retrieves a canister's `CanisterId` by its friendly name.
@@ -149,15 +143,5 @@ impl FuzzerState {
     /// for each canister after it has been created in the state machine.
     pub fn get_iter_mut_canister_info(&mut self) -> IterMut<CanisterInfo> {
         self.canisters.iter_mut()
-    }
-
-    /// A utility function to locate the project's `target` directory.
-    pub(crate) fn get_target_dir() -> PathBuf {
-        PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("target")
     }
 }

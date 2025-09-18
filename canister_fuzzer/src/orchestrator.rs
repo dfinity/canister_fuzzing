@@ -66,11 +66,6 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     /// * `ExitKind` - Indicates the outcome of the execution (e.g., `Ok`, `Crash`).
     fn execute(&self, input: BytesInput) -> ExitKind;
 
-    /// Returns the name of the specific directory for this fuzzer, if provided.
-    fn get_fuzzer_dir(&self) -> Option<String> {
-        self.get_fuzzer_state().get_fuzzer_dir()
-    }
-
     /// Returns a thread-safe reference to the `PocketIc` instance.
     fn get_state_machine(&self) -> Arc<PocketIc> {
         self.get_fuzzer_state().get_state_machine()
@@ -92,16 +87,15 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     /// you must override this method with your own implementation.
     /// Panics if the directory cannot be created.
     fn input_dir(&self) -> PathBuf {
-        let fuzzer_dir = self.get_fuzzer_dir().expect(
-            "`fuzzer_dir` is None. You must implement `input_dir`, `crashes_dir`, and `corpus_dir`.",
-        );
-        let input_dir = FuzzerState::get_target_dir()
+        let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR is not set");
+        let input_dir = PathBuf::from(out_dir)
             .join("artifacts")
-            .join(fuzzer_dir)
+            .join(self.get_fuzzer_state().name())
             .join(Local::now().format("%Y%m%d_%H%M").to_string())
             .join("input");
         fs::create_dir_all(&input_dir)
             .unwrap_or_else(|e| panic!("Failed to create input directory {input_dir:?}: {e}"));
+        println!("Input directory: {input_dir:?}");
         input_dir
     }
 
@@ -116,38 +110,22 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     /// you must override this method with your own implementation.
     /// Panics if the directory cannot be created.
     fn crashes_dir(&self) -> PathBuf {
-        let fuzzer_dir = self.get_fuzzer_dir().expect(
-            "`fuzzer_dir` is None. You must implement `input_dir`, `crashes_dir`, and `corpus_dir`.",
-        );
-        let crashes_dir = FuzzerState::get_target_dir()
+        let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR is not set");
+        let crashes_dir = PathBuf::from(out_dir)
             .join("artifacts")
-            .join(fuzzer_dir)
+            .join(self.get_fuzzer_state().name())
             .join(Local::now().format("%Y%m%d_%H%M").to_string())
             .join("crashes");
         fs::create_dir_all(&crashes_dir)
             .unwrap_or_else(|e| panic!("Failed to create crashes directory {crashes_dir:?}: {e}"));
+        println!("Crashes directory: {crashes_dir:?}");
         crashes_dir
     }
 
     /// Returns the path to the seed corpus directory.
     ///
     /// This directory should contain initial valid inputs to kickstart the fuzzing process.
-    /// The path is resolved relative to the workspace root, as `<fuzzer_dir>/corpus`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `fuzzer_dir` was not provided in `FuzzerState::new`. In this case,
-    /// you must override this method with your own implementation.
-    fn corpus_dir(&self) -> PathBuf {
-        let fuzzer_dir = self.get_fuzzer_dir().expect(
-            "`fuzzer_dir` is None. You must implement `input_dir`, `crashes_dir`, and `corpus_dir`.",
-        );
-        FuzzerState::get_target_dir()
-            .parent()
-            .unwrap()
-            .join(fuzzer_dir)
-            .join("corpus")
-    }
+    fn corpus_dir(&self) -> PathBuf;
 
     /// Fetches the coverage map from the instrumented canister and updates the global `COVERAGE_MAP`.
     ///

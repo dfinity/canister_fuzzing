@@ -2,6 +2,7 @@ use candid::Principal;
 use canister_fuzzer::libafl::executors::ExitKind;
 use canister_fuzzer::libafl::inputs::ValueInput;
 use pocket_ic::PocketIcBuilder;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use slog::Level;
@@ -12,13 +13,13 @@ use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
 fn main() {
     let mut fuzzer_state = StableMemoryFuzzer(FuzzerState::new(
+        "stable_memory_ops",
         vec![CanisterInfo {
             id: None,
             name: "stable_memory".to_string(),
             wasm_path: WasmPath::EnvVar("STABLE_MEMORY_WASM_PATH".to_string()),
             ty: CanisterType::Coverage,
         }],
-        Some("examples/stable_memory_ops".to_string()),
     ));
 
     fuzzer_state.run();
@@ -33,6 +34,15 @@ impl FuzzerStateProvider for StableMemoryFuzzer {
 }
 
 impl FuzzerOrchestrator for StableMemoryFuzzer {
+    fn corpus_dir(&self) -> std::path::PathBuf {
+        PathBuf::from(file!())
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("corpus")
+    }
+
     fn init(&mut self) {
         let test = PocketIcBuilder::new()
             .with_application_subnet()

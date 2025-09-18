@@ -8,6 +8,7 @@ use k256::{
 };
 use pocket_ic::PocketIcBuilder;
 use sha2::{Digest, Sha256};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use slog::Level;
@@ -19,13 +20,13 @@ use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes}
 
 fn main() {
     let mut fuzzer_state = MotokoDiffFuzzer(FuzzerState::new(
+        "motoko_diff",
         vec![CanisterInfo {
             id: None,
             name: "ecdsa_sign".to_string(),
             wasm_path: WasmPath::EnvVar("MOTOKO_CANISTER_WASM_PATH".to_string()),
             ty: CanisterType::Coverage,
         }],
-        Some("examples/motoko_diff".to_string()),
     ));
     fuzzer_state.run();
 }
@@ -39,6 +40,15 @@ impl FuzzerStateProvider for MotokoDiffFuzzer {
 }
 
 impl FuzzerOrchestrator for MotokoDiffFuzzer {
+    fn corpus_dir(&self) -> std::path::PathBuf {
+        PathBuf::from(file!())
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("corpus")
+    }
+
     fn init(&mut self) {
         let test = PocketIcBuilder::new()
             .with_application_subnet()
