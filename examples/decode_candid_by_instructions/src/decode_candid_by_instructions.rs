@@ -123,7 +123,6 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
             self.setup();
             let result = self.execute(input.clone());
             self.set_coverage_map();
-            self.cleanup();
             result
         };
 

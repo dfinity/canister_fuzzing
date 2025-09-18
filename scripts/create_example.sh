@@ -10,6 +10,7 @@ fi
 PROJECT_NAME="$1"
 
 # Create directory structure
+cd examples/
 mkdir -p "$PROJECT_NAME"/{corpus,crashes,input,src}
 
 # Create files

@@ -77,10 +77,6 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     /// * `ExitKind` - Indicates the outcome of the execution (e.g., `Ok`, `Crash`).
     fn execute(&self, input: BytesInput) -> ExitKind;
 
-    /// Cleans up the environment after each execution.
-    /// This could involve restoring the `StateMachine` from a snapshot.
-    fn cleanup(&self) {}
-
     /// Returns the name of the specific directory for this fuzzer, if provided.
     fn get_fuzzer_dir(&self) -> Option<String> {
         self.get_fuzzer_state().get_fuzzer_dir()
@@ -210,7 +206,6 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
             self.setup();
             let result = self.execute(input.clone());
             self.set_coverage_map();
-            self.cleanup();
             result
         };
 
@@ -292,7 +287,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     ///
     /// This function is useful for debugging specific inputs, such as those that
     /// have caused a crash, without running the full fuzzing loop. It calls
-    /// `init`, `setup`, `execute`, and `cleanup` in sequence for the given input.
+    /// `init`, `setup`, `execute` in sequence for the given input.
     ///
     /// # Arguments
     ///
@@ -301,7 +296,6 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         self.init();
         self.setup();
         let result = self.execute(BytesInput::new(bytes));
-        self.cleanup();
         println!("Execution result: {result:?}");
     }
 }

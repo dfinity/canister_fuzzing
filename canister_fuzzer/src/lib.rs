@@ -41,7 +41,7 @@
 //! ## Getting Started
 //!
 //! To create a new fuzzer, you need to implement the [`orchestrator::FuzzerOrchestrator`]
-//! trait. This trait defines the setup, execution, and cleanup logic for your
+//! trait. This trait defines the init, setup, and execution logic for your
 //! fuzzing campaign.
 //!
 //! ```no_run

@@ -1,6 +1,7 @@
 use candid::{Decode, Encode, Principal};
 use canister_fuzzer::libafl::executors::ExitKind;
 use canister_fuzzer::libafl::inputs::ValueInput;
+use once_cell::sync::OnceCell;
 use pocket_ic::PocketIcBuilder;
 use slog::Level;
 
@@ -10,6 +11,7 @@ use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::util::read_canister_bytes;
 
 const SYNCHRONOUS_EXECUTION: bool = false;
+static SNAPSHOT: OnceCell<(Vec<u8>, Vec<u8>)> = OnceCell::new();
 
 fn main() {
     let mut fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState::new(
@@ -74,11 +76,6 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
         for (info, id) in self.0.get_iter_mut_canister_info().zip(canisters) {
             info.id = Some(id)
         }
-    }
-
-    fn setup(&self) {
-        let test = self.get_state_machine();
-        let ledger_canister_id = self.0.get_canister_id_by_name("ledger");
 
         // Prepare the main canister
         // Adds a local balance of 10_000_000 to anonymous principal
@@ -123,6 +120,27 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
 
         // should never fail
         assert_eq!(b1, b2);
+
+        let s1 = test
+            .take_canister_snapshot(main_canister_id, None, None)
+            .unwrap()
+            .id;
+        let s2 = test
+            .take_canister_snapshot(ledger_canister_id, None, None)
+            .unwrap()
+            .id;
+        SNAPSHOT.set((s1, s2)).unwrap();
+    }
+
+    fn setup(&self) {
+        let test = self.get_state_machine();
+        let main_canister_id = self.get_coverage_canister_id();
+        let ledger_canister_id = self.0.get_canister_id_by_name("ledger");
+        let (s1, s2) = SNAPSHOT.get().unwrap();
+        test.load_canister_snapshot(main_canister_id, None, s1.to_vec())
+            .unwrap();
+        test.load_canister_snapshot(ledger_canister_id, None, s2.to_vec())
+            .unwrap();
     }
 
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
