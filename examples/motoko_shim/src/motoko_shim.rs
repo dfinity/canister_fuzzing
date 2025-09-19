@@ -53,7 +53,7 @@ impl FuzzerOrchestrator for MotokoShimFuzzer {
 
         for info in self.0.get_iter_mut_canister_info() {
             let canister_id = test.create_canister();
-            test.add_cycles(canister_id, 5_000_000_000_000);
+            test.add_cycles(canister_id, u128::MAX / 2);
             let module =
                 instrument_wasm_for_fuzzing(&read_canister_bytes(info.wasm_path.clone()), 8);
             test.install_canister(canister_id, module, vec![], None);

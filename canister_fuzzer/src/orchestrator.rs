@@ -137,7 +137,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
     #[allow(static_mut_refs)]
     fn set_coverage_map(&self) {
         let test = self.get_state_machine();
-        let result = test.query_call(
+        let result = test.update_call(
             self.get_coverage_canister_id(),
             Principal::anonymous(),
             COVERAGE_FN_EXPORT_NAME,

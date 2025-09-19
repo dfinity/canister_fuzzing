@@ -1,6 +1,7 @@
 use candid::Principal;
 use canister_fuzzer::libafl::executors::ExitKind;
 use canister_fuzzer::libafl::inputs::ValueInput;
+use once_cell::sync::OnceCell;
 use pocket_ic::PocketIcBuilder;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -11,6 +12,9 @@ use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath}
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
+
+static SNAPSHOT_ID: OnceCell<Vec<u8>> = OnceCell::new();
+
 fn main() {
     let mut fuzzer_state = StableMemoryFuzzer(FuzzerState::new(
         "stable_memory_ops",
@@ -53,12 +57,27 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
 
         for info in self.0.get_iter_mut_canister_info() {
             let canister_id = test.create_canister();
-            test.add_cycles(canister_id, 5_000_000_000_000);
+            test.add_cycles(canister_id, u128::MAX / 2);
             let module =
                 instrument_wasm_for_fuzzing(&read_canister_bytes(info.wasm_path.clone()), 4);
             test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);
         }
+
+        let snapshot = test
+            .take_canister_snapshot(self.get_coverage_canister_id(), None, None)
+            .unwrap();
+        SNAPSHOT_ID.set(snapshot.id).unwrap();
+    }
+
+    fn setup(&self) {
+        let test = self.get_state_machine();
+        test.load_canister_snapshot(
+            self.get_coverage_canister_id(),
+            None,
+            SNAPSHOT_ID.get().unwrap().to_vec(),
+        )
+        .unwrap();
     }
 
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {

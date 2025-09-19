@@ -133,10 +133,15 @@ fn inject_afl_coverage_export<'a>(
         .global_get(afl_mem_ptr_idx)
         .i32_const(AFL_COVERAGE_MAP_SIZE * history_size as i32)
         .call(msg_reply_data_append_idx)
-        .call(msg_reply_idx);
+        .call(msg_reply_idx)
+        .global_get(afl_mem_ptr_idx)
+        .i32_const(0)
+        .i32_const(AFL_COVERAGE_MAP_SIZE * history_size as i32)
+        .memory_fill(0);
+
     let coverage_function_id = func_builder.finish_module(module);
 
-    let export_name = format!("canister_query {COVERAGE_FN_EXPORT_NAME}");
+    let export_name = format!("canister_update {COVERAGE_FN_EXPORT_NAME}");
     module
         .exports
         .add_export_func(export_name, coverage_function_id.0);
