@@ -159,7 +159,7 @@ impl FuzzerOrchestrator for MyFuzzer {
         );
 
         // Check for traps
-        let (exit_kind, _reply) = parse_canister_result_for_trap(result);
+        let exit_kind = parse_canister_result_for_trap(result);
         if exit_kind == ExitKind::Crash {
             return ExitKind::Crash;
         }

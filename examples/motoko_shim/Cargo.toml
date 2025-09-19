@@ -2,6 +2,8 @@
 name = "motoko_shim"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+publish = false
 
 build = "build.rs"
 

@@ -14,17 +14,20 @@ pub fn read_canister_bytes(wasm_path: WasmPath) -> Vec<u8> {
     buffer
 }
 
-pub fn parse_canister_result_for_trap(
-    result: Result<Vec<u8>, RejectResponse>,
-) -> (ExitKind, Option<Vec<u8>>) {
+pub fn parse_canister_result_for_trap(result: Result<Vec<u8>, RejectResponse>) -> ExitKind {
     match result {
-        Ok(reply) => (ExitKind::Ok, Some(reply)),
-        Err(e) => match e.error_code {
-            ErrorCode::CanisterTrapped | ErrorCode::CanisterCalledTrap => {
-                // println!("{e:?}");
-                (ExitKind::Crash, None)
+        Ok(_) => ExitKind::Ok,
+        Err(e) => {
+            // println!("{e:?}");
+            match e.error_code {
+                ErrorCode::CanisterTrapped | ErrorCode::CanisterCalledTrap => ExitKind::Crash,
+                ErrorCode::CanisterMemoryAccessLimitExceeded
+                | ErrorCode::InsufficientMemoryAllocation
+                | ErrorCode::CanisterOutOfMemory
+                | ErrorCode::CanisterWasmMemoryLimitExceeded => ExitKind::Oom,
+                ErrorCode::CanisterInstructionLimitExceeded => ExitKind::Timeout,
+                _ => ExitKind::Ok, // How to handle other errors?
             }
-            _ => (ExitKind::Ok, None),
-        },
+        }
     }
 }

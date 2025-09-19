@@ -4,6 +4,7 @@
 
 /// The size of the shared memory map used for AFL-style coverage tracking.
 /// This value (2^16) is standard for AFL.
+/// The actual memory map size is AFL_COVERAGE_MAP_SIZE * history_size
 pub const AFL_COVERAGE_MAP_SIZE: i32 = 65536;
 
 /// The module name for the IC System API.

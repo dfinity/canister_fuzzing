@@ -76,6 +76,6 @@ impl FuzzerOrchestrator for MotokoShimFuzzer {
         test.advance_time(Duration::from_secs(1));
         test.tick();
 
-        exit_status.0
+        exit_status
     }
 }

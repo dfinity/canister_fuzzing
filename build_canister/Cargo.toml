@@ -2,6 +2,8 @@
 name = "build_canister"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+publish = false
 
 [lib]
 crate-type = ["lib"]

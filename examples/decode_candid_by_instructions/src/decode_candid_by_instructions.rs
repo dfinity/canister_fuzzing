@@ -1,4 +1,5 @@
 use canister_fuzzer::custom::decode_map::{DECODING_MAP_OBSERVER_NAME, DecodingMapFeedback, MAP};
+use canister_fuzzer::custom::oom_exit_kind::OomLogic;
 use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
 use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
@@ -23,7 +24,7 @@ use canister_fuzzer::libafl::{
     corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
     events::SimpleEventManager,
     executors::inprocess::InProcessExecutor,
-    feedbacks::{CrashFeedback, map::AflMapFeedback},
+    feedbacks::{CrashFeedback, ExitKindFeedback, TimeoutFeedback, map::AflMapFeedback},
     fuzzer::{Fuzzer, StdFuzzer},
     inputs::BytesInput,
     mutators::{HavocScheduledMutator, havoc_mutations},
@@ -92,15 +93,22 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let test = self.get_state_machine();
 
         let bytes: Vec<u8> = input.into();
-        let result = parse_canister_result_for_trap(test.update_call(
+        let result = test.update_call(
             self.get_coverage_canister_id(),
             Principal::anonymous(),
             "parse_candid",
             Encode!(&bytes).unwrap(),
-        ));
+        );
 
-        let instructions = if result.0 == ExitKind::Ok && result.1.is_some() {
-            Decode!(&result.1.unwrap(), u64).unwrap()
+        let status = parse_canister_result_for_trap(result.clone());
+        // For candid decoding, explicit traps are common and not interesting, so we wrap them as OK
+        let status = if status != ExitKind::Crash {
+            status
+        } else {
+            ExitKind::Ok
+        };
+        let instructions = if status == ExitKind::Ok && result.is_ok() {
+            Decode!(&result.unwrap(), u64).unwrap()
         } else {
             0
         };
@@ -124,7 +132,8 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         if ratio > 10_000_000 {
             return ExitKind::Crash;
         }
-        ExitKind::Ok
+
+        status
     }
 
     fn run(&mut self) {
@@ -151,7 +160,12 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
         let calibration_stage = CalibrationStage::new(&afl_map_feedback);
         let mut feedback = feedback_or!(decoding_feedback, afl_map_feedback);
-        let mut objective = CrashFeedback::new();
+
+        // The objective is to find crashes, timeouts or oom
+        let crash_feedback = CrashFeedback::new();
+        let timeout_feedback = TimeoutFeedback::new();
+        let oom_feedback: ExitKindFeedback<OomLogic> = ExitKindFeedback::new();
+        let mut objective = feedback_or!(crash_feedback, timeout_feedback, oom_feedback);
 
         let stats_stage = AflStatsStage::builder()
             .map_observer(&hitcount_map_observer)

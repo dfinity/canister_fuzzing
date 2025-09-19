@@ -8,12 +8,15 @@
 use candid::Principal;
 use chrono::Local;
 use ic_management_canister_types::CanisterId;
+use libafl::feedback_or;
+use libafl::feedbacks::{ExitKindFeedback, TimeoutFeedback};
 use pocket_ic::PocketIc;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::custom::oom_exit_kind::OomLogic;
 use crate::libafl::{
     Evaluator,
     corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
@@ -184,8 +187,12 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
         let mut feedback = afl_map_feedback;
         let calibration_stage = CalibrationStage::new(&feedback);
-        // The objective is to find crashes
-        let mut objective = CrashFeedback::new();
+
+        // The objective is to find crashes, timeouts or oom
+        let crash_feedback = CrashFeedback::new();
+        let timeout_feedback = TimeoutFeedback::new();
+        let oom_feedback: ExitKindFeedback<OomLogic> = ExitKindFeedback::new();
+        let mut objective = feedback_or!(crash_feedback, timeout_feedback, oom_feedback);
 
         // A stats stage to print statistics about the fuzzing run.
         let stats_stage = AflStatsStage::builder()

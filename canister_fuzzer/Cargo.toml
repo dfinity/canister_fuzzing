@@ -2,6 +2,13 @@
 name = "canister_fuzzer"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+description = "A coverage-guided fuzzing framework for Internet Computer canisters, built on `libafl` and `pocket-ic`"
+license = "Apache-2.0"
+readme = "../README.md"
+include = ["src", "Cargo.toml", "../LICENSE", "../README.md"]
+repository = "https://github.com/dfinity/canister_fuzzing/"
+documentation = "https://docs.rs/canister_fuzzer"
 
 [lib]
 crate-type = ["lib"]

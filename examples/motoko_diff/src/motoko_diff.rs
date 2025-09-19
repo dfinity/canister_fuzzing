@@ -80,24 +80,17 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         let digest = hasher.finalize();
         let b = digest.as_slice().to_vec();
         let payload = candid::Encode!(&b, &key, &k).unwrap();
-        let result = parse_canister_result_for_trap(test.update_call(
+        let result = test.update_call(
             self.get_coverage_canister_id(),
             Principal::anonymous(),
             "sign_ecdsa",
             payload,
-        ));
+        );
 
-        // Update main result here (test for hash)
-        // let bytes: Vec<u8> = input.into();
-        // let mut hasher = Sha256::new();
-        // hasher.update(bytes);
-        // let digest = hasher.finalize();
-        // let b = digest.as_slice().to_vec();
-        // let payload = candid::Encode!(&bytes).unwrap();
-        // let result = test.update_call(fuzzer_state.get_canister_id_by_name("ecdsa_sign"), Principal::anonymous(), "sign_ecdsa", payload);
+        let exit_status = parse_canister_result_for_trap(result.clone());
 
-        let exit_status = if result.0 == ExitKind::Ok && result.1.is_some() {
-            let result = Decode!(&result.1.unwrap(), Vec<u8>).unwrap();
+        let exit_status = if exit_status == ExitKind::Ok && result.is_ok() {
+            let result = Decode!(&result.unwrap(), Vec<u8>).unwrap();
             let d = Scalar::from_repr(key.into()).unwrap();
             let k = Scalar::from_repr(k.into()).unwrap();
 
@@ -110,7 +103,7 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
             }
             ExitKind::Ok
         } else {
-            ExitKind::Crash
+            exit_status
         };
 
         test.advance_time(Duration::from_secs(1));
