@@ -2,30 +2,7 @@
 
 A coverage-guided fuzzer for Internet Computer canisters, built on `libafl` and `pocket-ic`. It finds bugs by instrumenting canister Wasm, emulating the IC with `pocket-ic`, and using `libafl` to explore code paths.
 
-## Running an example
-
-### Prerequisites
-
-1.  **Rust**:
-    ```sh
-    rustup default stable
-    rustup target add wasm32-unknown-unknown
-    ```
-2.  **DFX**: [Installation guide](https://internetcomputer.org/docs/current/developer-docs/getting-started/install/index.html) (for Motoko canisters).
-3.  **Mops**: `npm install -g mops` (for Motoko canisters).
-
-
-The `examples/` directory contains sample fuzzers. To run the `stable_memory_ops` example:
-
-1.  **Build and Run:**
-    ```sh
-    cargo run --release -p stable_memory_ops
-    ```
-
-2.  **Check Output:**
-    The fuzzer will start and display a status screen. Results, including new inputs (`corpus`) and crashes, are saved to a timestamped directory inside `artifacts/`. The exact path is printed at startup.
-
-## Build a Fuzzer
+## Building a new fuzzer
 
 To build a fuzzer, one must implement the `FuzzerOrchestrator` trait. This involves two main parts: an `init` function to set up the canisters and an `execute` function that runs for each input.
 
@@ -97,6 +74,29 @@ fn main() {
 }
 ```
 
+## Running an example
+
+### Prerequisites
+
+1.  **Rust**:
+    ```sh
+    rustup default stable
+    rustup target add wasm32-unknown-unknown
+    ```
+2.  **DFX**: [Installation guide](https://internetcomputer.org/docs/current/developer-docs/getting-started/install/index.html) (for Motoko canisters).
+3.  **Mops**: `npm install -g mops` (for Motoko canisters).
+
+
+The `examples/` directory contains sample fuzzers. To run the `stable_memory_ops` example:
+
+1.  **Build and Run:**
+    ```sh
+    cargo run --release -p stable_memory_ops
+    ```
+
+2.  **Check Output:**
+    The fuzzer will start and display a status screen. Results, including new inputs (`corpus`) and crashes, are saved to a timestamped directory inside `artifacts/`. The exact path is printed at startup.
+
 ## Reproduce a Crash
 
 When a crash is found, the input is saved to the `artifacts/.../crashes/` directory. Use the `test_one_input` method to reproduce it for debugging.
@@ -118,6 +118,24 @@ When a crash is found, the input is saved to the `artifacts/.../crashes/` direct
         fuzzer.test_one_input(crash_input);
     }
     ```
+
+## How It Works
+
+The canister fuzzing framework integrates three key components to provide a powerful, coverage-guided fuzzing experience for Internet Computer canisters:
+
+*   **`libafl` (Fuzzing Engine)**: At its core, the framework uses `libafl`, a state-of-the-art fuzzing library. `libafl` is responsible for the main fuzzing loop, which includes:
+    *   Generating and mutating inputs.
+    *   Executing test cases with the generated inputs.
+    *   Collecting code coverage feedback to guide future mutations.
+    *   Managing the corpus of interesting inputs and reporting crashes.
+
+*   **`pocket-ic` (IC Emulator)**: To execute canister calls in a deterministic and high-performance environment, the framework uses `pocket-ic`. This component emulates the Internet Computer, allowing the fuzzer to install canisters, make calls, and check their state without relying on a live replica. Each fuzzing run gets a sandboxed IC environment.
+
+*   **Wasm Instrumentation**: To enable coverage-guided fuzzing, the target canister's Wasm module is automatically instrumented before being deployed to `pocket-ic`. This process modifies the Wasm to provide execution feedback to `libafl`.
+    *   **Instrumentation Pass**: The framework uses a Wasm-to-Wasm transformation pass. This pass analyzes the canister's code and injects small snippets of code at various points (typically at every basic block or edge).
+    *   **Coverage Map**: A global array, known as the "coverage map" or "edges map," is added to the Wasm module's memory. This map is shared between the instrumented code and the fuzzer's feedback mechanism. Each entry in the map corresponds to a specific code block or branch in the original program.
+    *   **Tracking Execution**: The injected code snippets are simple: they update the coverage map whenever they are executed. For example, a hit counter for a specific code block is incremented. This allows the fuzzer to know which parts of the canister were executed for a given input.
+    *   **Exporting Coverage Data**: Since the canister runs in the sandboxed `pocket-ic` environment, a special query method (e.g., `__get_coverage`) is added to the Wasm module. After each test case, the fuzzer calls this method to retrieve the coverage map from the canister's memory. This data is then passed to `libafl` to guide the next round of mutations.
 
 ## License
 
