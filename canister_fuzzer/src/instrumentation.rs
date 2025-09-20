@@ -7,7 +7,7 @@
 //! 2.  Injecting a helper function that contains the core instrumentation logic.
 //! 3.  Instrumenting the Wasm bytecode by inserting calls to the helper function at the
 //!     start of each function and before every branch, effectively covering all basic blocks.
-//! 4.  Exporting a function (`export_coverage`) that allows the fuzzer to retrieve the
+//! 4.  Exporting a coverage function that allows the fuzzer to retrieve the
 //!     coverage map from the canister.
 
 use anyhow::Result;
@@ -30,7 +30,6 @@ use crate::constants::{AFL_COVERAGE_MAP_SIZE, API_VERSION_IC0, COVERAGE_FN_EXPOR
 /// It is used as a shared memory region between the fuzzer and the instrumented canister.
 /// The `libafl` framework is designed to work with such a mechanism, which is a highly
 /// optimized approach for coverage-guided fuzzing, inspired by AFL.
-/// Access to this map is carefully controlled within the fuzzing loop.
 pub static mut COVERAGE_MAP: &mut [u8] = &mut [0; AFL_COVERAGE_MAP_SIZE as usize];
 
 /// Instruments the given Wasm bytes for fuzzing.
@@ -71,7 +70,7 @@ pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8], history_size: usize) -> Ve
 ///
 /// It performs the following steps:
 /// 1. Injects global variables required for tracking coverage.
-/// 2. Injects the `export_coverage` query function to expose the coverage map.
+/// 2. Injects the `[COVERAGE_FN_EXPORT_NAME]` update function to expose the coverage map.
 /// 3. Instruments all functions by inserting calls to a helper function at the
 ///    start of each function and before each branch instruction.
 fn instrument_for_afl(module: &mut Module<'_>, history_size: usize) -> Result<()> {
@@ -115,7 +114,7 @@ fn inject_globals(module: &mut Module<'_>, history_size: usize) -> (Vec<GlobalID
     (afl_prev_loc_indices, afl_mem_ptr_idx)
 }
 
-/// Injects the `canister_query export_coverage` function.
+/// Injects the `canister_update `[COVERAGE_FN_EXPORT_NAME]` function.
 ///
 /// This exported function allows the fuzzer orchestrator to query the canister
 /// and retrieve the coverage map. It uses the `ic0.msg_reply_data_append` and

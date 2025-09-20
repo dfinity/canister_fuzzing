@@ -1,47 +1,13 @@
 //! A coverage-guided fuzzing framework for Internet Computer canisters.
 //!
-//! This framework is built on `libafl` and `pocket-ic` to find bugs,
-//! vulnerabilities, and unexpected behavior in IC canisters by automatically
-//! generating and executing a vast number of inputs. It supports both Rust and
-//! Motoko canisters.
-//!
-//! ## Overview
-//!
-//! The core idea is to run canister code in a fast, deterministic, and
-//! instrumented environment.
-//!
-//! - **Fuzzing Engine**: Uses `libafl` for
-//!   state-of-the-art, coverage-guided fuzzing.
-//! - **IC Emulator**: Uses `pocket-ic` to simulate the Internet Computer,
-//!   allowing for fast, local execution of canister calls without needing a
-//!   live network.
-//! - **Instrumentation**: Canister Wasm is automatically instrumented with
-//!   AFL-style coverage hooks. This allows the fuzzer to see which parts of
-//!   the code are executed by an input and guide its mutations to explore new
-//!   code paths.
-//! - **Orchestration**: A simple trait-based system allows you to define the
-//!   complete fuzzing harness, including canister setup and the logic for each
-//!   test case.
-//!
-//! ## Key Modules
-//!
-//! The framework is composed of a few key modules:
-//!
-//! - [`fuzzer`]: Defines `FuzzerState`, which holds the `PocketIc` instance and
-//!   information about all canisters under test.
-//! - [`orchestrator`]: Defines the `FuzzerOrchestrator` trait. You implement this
-//!   trait to create a fuzzing harness. The `run()` method handles the entire
-//!   `libafl` setup and execution loop.
-//! - [`instrumentation`]: Contains the logic to parse a Wasm file and inject
-//!   coverage-tracking instrumentation. The `instrument_wasm_for_fuzzing`
-//!   function is called during the `init` phase of your fuzzer. It supports a configurable history size for more flexible coverage tracking.
-//! - [`util`]: Provides helper functions, such as `read_canister_bytes` to load
-//!   Wasm from a path, which can be specified directly or via an environment variable.
+//! This framework is built on `libafl` and `pocket-ic` to find bugs in IC canisters
+//! by automatically generating and executing a vast number of inputs.
+//! It supports both Rust and Motoko canisters.
 //!
 //! ## Getting Started
 //!
-//! To create a new fuzzer, you need to implement the [`orchestrator::FuzzerOrchestrator`]
-//! trait. This trait defines the init, setup, and execution logic for your
+//! To create a fuzzer, implement the [`orchestrator::FuzzerOrchestrator`] trait.
+//! This trait defines the setup and execution logic for your
 //! fuzzing campaign.
 //!
 //! ```no_run
@@ -51,35 +17,34 @@
 //! use canister_fuzzer::libafl::inputs::BytesInput;
 //! use std::path::PathBuf;
 //!
-//! // 1. Define a struct to hold the FuzzerState
+//! // 1. Define a struct for your fuzzer.
 //! struct MyFuzzer(FuzzerState);
 //!
-//! // 2. Implement FuzzerStateProvider
+//! // 2. Provide access to the fuzzer state.
 //! impl FuzzerStateProvider for MyFuzzer {
 //!     fn get_fuzzer_state(&self) -> &FuzzerState { &self.0 }
 //! }
 //!
-//! // 3. Implement the main fuzzing logic
+//! // 3. Implement the fuzzing logic.
 //! impl FuzzerOrchestrator for MyFuzzer {
 //!     fn init(&mut self) {
-//!         // ... setup PocketIc and install canisters ...
+//!         // Setup PocketIc and install canisters.
 //!         println!("Canisters installed");
 //!     }
 //!
 //!     fn corpus_dir(&self) -> PathBuf {
-//!         // Path to the seed corpus for this fuzzer
 //!         PathBuf::from("./corpus")
 //!     }
 //!
 //!     fn execute(&self, input: BytesInput) -> ExitKind {
-//!         // ... execute a canister call with the input ...
 //!         let payload: Vec<u8> = input.into();
 //!         println!("Executing input: {:?}", payload);
+//!         // Execute a canister call with the input.
 //!         ExitKind::Ok
 //!     }
 //! }
 //!
-//! // 4. The main function to set up and run the fuzzer
+//! // 4. Set up and run the fuzzer.
 //! fn main() {
 //!     let mut fuzzer = MyFuzzer(FuzzerState::new(
 //!         "my_fuzzer",
@@ -87,7 +52,7 @@
 //!             CanisterInfo {
 //!                 id: None,
 //!                 name: "my_target_canister".to_string(),
-//!                 wasm_path: WasmPath::EnvVar("MY_TARGET_CANISTER_WASM_PATH".to_string()),
+//!                 wasm_path: WasmPath::Path("./my_canister.wasm".into()),
 //!                 ty: CanisterType::Coverage,
 //!             },
 //!         ],
