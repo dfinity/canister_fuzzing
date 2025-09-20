@@ -1,156 +1,65 @@
 # Canister Fuzzing Framework
 
-A coverage-guided fuzzing framework for Internet Computer canisters, built on `libafl` and `pocket-ic`.
+A coverage-guided fuzzer for Internet Computer canisters, built on `libafl` and `pocket-ic`. It finds bugs by instrumenting canister Wasm, emulating the IC with `pocket-ic`, and using `libafl` to explore code paths.
 
-This framework is designed to find bugs, vulnerabilities, and unexpected behavior in IC canisters by automatically generating and executing a vast number of inputs. It supports both Rust and Motoko canisters.
+## Running an example
 
-## Overview
+### Prerequisites
 
-The core idea is to run canister code in a fast, deterministic, and instrumented environment.
+1.  **Rust**:
+    ```sh
+    rustup default stable
+    rustup target add wasm32-unknown-unknown
+    ```
+2.  **DFX**: [Installation guide](https://internetcomputer.org/docs/current/developer-docs/getting-started/install/index.html) (for Motoko canisters).
+3.  **Mops**: `npm install -g mops` (for Motoko canisters).
 
-- **Fuzzing Engine**: Uses [`libafl`](https://github.com/AFLplusplus/libafl) for state-of-the-art, coverage-guided fuzzing.
-- **IC Emulator**: Uses `pocket-ic` to simulate the Internet Computer, allowing for fast, local execution of canister calls without needing a live network.
-- **Instrumentation**: Canister Wasm is automatically instrumented with AFL-style coverage hooks. This allows the fuzzer to see which parts of the code are executed by an input and guide its mutations to explore new code paths.
-- **Orchestration**: A simple trait-based system allows you to define the complete fuzzing harness, including canister setup and the logic for each test case.
 
-## Prerequisites
+The `examples/` directory contains sample fuzzers. To run the `stable_memory_ops` example:
 
-Before you begin, ensure you have the following installed:
-
-- **Rust**: Install via `rustup`.
-  ```sh
-  rustup default stable
-  rustup target add wasm32-unknown-unknown
-  ```
-- **DFINITY Canister SDK (`dfx`)**: Required for building Motoko canisters. Installation [guide](https://internetcomputer.org/docs/building-apps/getting-started/install).
-- **Mops**: A package manager for Motoko.
-  ```sh
-  npm install -g mops
-  ```
-
-## Getting Started
-
-The framework includes several examples in the `examples/` directory. To run the `stable_memory_ops` fuzzer:
-
-1.  **Build and Run the Fuzzer:**
+1.  **Build and Run:**
     ```sh
     cargo run --release -p stable_memory_ops
     ```
-    This command compiles the `stable_memory_ops` example and its associated canisters, instruments the target canister, and starts the fuzzing loop.
 
-2.  **Observe the Output:**
-    You will see `libafl`'s status screen, showing statistics like executions per second, total executions, and coverage.
+2.  **Check Output:**
+    The fuzzer will start and display a status screen. Results, including new inputs (`corpus`) and crashes, are saved to a timestamped directory inside `artifacts/`. The exact path is printed at startup.
 
-3.  **Check the Artifacts:**
-    Interesting inputs and crashes are saved in a timestamped directory inside `target/`. The exact path, which looks something like `target/debug/build/<example-name>-<hash>/out/artifacts/...`, is printed to the console when the fuzzer starts.
-    - **Corpus**: Inputs that discovered new code coverage are saved in the `input` subdirectory.
-    - **Crashes**: Inputs that caused a panic or returned an `ExitKind::Crash` are saved in the `crashes` subdirectory.
+## Build a Fuzzer
 
-## How It Works
-
-The framework is composed of a few key modules:
-
-- **`fuzzer.rs`**: Defines `FuzzerState`, which holds the `PocketIc` instance and information about all canisters under test.
-- **`orchestrator.rs`**: Defines the `FuzzerOrchestrator` trait. You implement this trait to create a fuzzing harness. The `run()` method handles the entire `libafl` setup and execution loop.
-- **`instrumentation.rs`**: Contains the logic to parse a Wasm file and inject coverage-tracking instrumentation. The `instrument_wasm_for_fuzzing` function is called during the `init` phase of your fuzzer. It supports a configurable history size for more flexible coverage tracking.
-- **`util.rs`**: Provides helper functions, such as `read_canister_bytes` to load Wasm from a path, which can be specified directly or via an environment variable.
-
-## Creating a New Fuzzer
-
-Follow these steps to create a new fuzzer for your canisters.
-
-### 1. Set Up the Crate and Canisters
-
-> [!WARNING]  
-> This is only necessary if you need a build script for building your canister. In most cases, you can directly specify the wasm via WasmPath::Path(path).
-
-1.  **Create a Crate**: Add a new binary crate in the `examples/` directory (e.g., `my_fuzzer`).
-2.  **Add Canisters**: Place your canister source code (Rust or Motoko) in the `canisters/` directory.
-3.  **Create `build.rs`**: In your new example crate, create a `build.rs` file to compile your canisters. This uses the `build_canister` helper.
-
-    ```rust
-    // examples/my_fuzzer/build.rs
-    use build_canister::{Canister, CanisterBuildOpts, build_canisters};
-
-    fn main() {
-        build_canisters(vec![
-            // A Rust canister to be instrumented for coverage
-            CanisterBuildOpts {
-                name: "my_target_canister",
-                ty: Canister::Rust,
-                env_var: "MY_TARGET_CANISTER_WASM_PATH",
-            },
-            // A support canister (e.g., a ledger)
-            CanisterBuildOpts {
-                name: "support_canister",
-                ty: Canister::Rust, // or Canister::Motoko
-                env_var: "SUPPORT_CANISTER_WASM_PATH",
-            },
-        ]);
-    }
-    ```
-
-### 2. Implement the Fuzzer
-
-In your example's `main.rs`, implement the `FuzzerOrchestrator` trait.
+To build a fuzzer, one must implement the `FuzzerOrchestrator` trait. This involves two main parts: an `init` function to set up the canisters and an `execute` function that runs for each input.
 
 ```rust
-// examples/my_fuzzer/src/main.rs
+// my_fuzzer/src/main.rs
 use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
 use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
-use canister_fuzzer::util::{read_canister_bytes, parse_canister_result_for_trap};
-use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
+use canister_fuzzer::util::parse_canister_result_for_trap;
 use canister_fuzzer::libafl::executors::ExitKind;
 use canister_fuzzer::libafl::inputs::BytesInput;
-use std::path::PathBuf;
-use pocket_ic::{PocketIcBuilder, PocketIc};
 use candid::Principal;
 
-// 1. Define a struct to hold the FuzzerState
+// 1. Define a struct for the fuzzer state
 struct MyFuzzer(FuzzerState);
 
-// 2. Implement FuzzerStateProvider
+// 2. Implement the trait to provide access to the state
 impl FuzzerStateProvider for MyFuzzer {
     fn get_fuzzer_state(&self) -> &FuzzerState { &self.0 }
 }
 
-// 3. Implement the main fuzzing logic
+// 3. Implement the core fuzzing logic
 impl FuzzerOrchestrator for MyFuzzer {
+    /// Sets up the IC environment and installs canisters.
     fn init(&mut self) {
-        // Initialize PocketIc
-        let pic = PocketIcBuilder::new().with_application_subnet().build();
-        self.0.init_state(pic);
-        let pic = self.get_state_machine();
-
-        // Install canisters
-        for info in self.0.get_iter_mut_canister_info() {
-            let canister_id = pic.create_canister();
-            pic.add_cycles(canister_id, 2_000_000_000_000);
-
-            let wasm_bytes = read_canister_bytes(info.wasm_path.clone());
-            let module = if info.ty == CanisterType::Coverage {
-                // Instrument the target canister.
-                // The second argument is the history size (must be 1, 2, 4, or 8).
-                instrument_wasm_for_fuzzing(&wasm_bytes, 2)
-            } else {
-                wasm_bytes
-            };
-            pic.install_canister(canister_id, module, vec![], None);
-            info.id = Some(canister_id);
-        }
+        self.default_init(); // A helper that initializes PocketIc and installs canisters
     }
 
-    fn corpus_dir(&self) -> PathBuf {
-        // Path to the seed corpus for this fuzzer.
-        PathBuf::from(file!()).parent().unwrap().join("corpus")
-    }
-
+    /// Executes one test case with a given input.
     fn execute(&self, input: BytesInput) -> ExitKind {
-        let pic = self.get_state_machine();
-        let target_canister = self.get_coverage_canister_id();
         let payload: Vec<u8> = input.into();
+        let target_canister = self.get_coverage_canister_id();
+        let pic = self.get_state_machine();
 
-        // Make a canister call with the fuzzer-generated payload
+        // Call a method on the target canister
         let result = pic.update_call(
             target_canister,
             Principal::anonymous(),
@@ -158,82 +67,57 @@ impl FuzzerOrchestrator for MyFuzzer {
             payload,
         );
 
-        // Check for traps
-        let exit_kind = parse_canister_result_for_trap(result);
-        if exit_kind == ExitKind::Crash {
-            return ExitKind::Crash;
-        }
+        // Check for traps (panics). This is a common crash condition.
+        parse_canister_result_for_trap(result)
 
-        // Add custom logic to check for other bugs (e.g., incorrect state)
-        // if is_bug_detected() {
-        //     return ExitKind::Crash;
-        // }
-
-        ExitKind::Ok
+        // For other bugs, add custom checks and return ExitKind::Crash if found.
+        // if is_bug_detected() { return ExitKind::Crash; }
+        // ExitKind::Ok
     }
 }
 
-// 4. The main function to set up and run the fuzzer
+// 4. The main function to configure and run the fuzzer
 fn main() {
-    let mut fuzzer = MyFuzzer(FuzzerState::new(
-        "my_fuzzer",
-        vec![
-            CanisterInfo {
-                id: None,
-                name: "my_target_canister".to_string(),
-                wasm_path: WasmPath::EnvVar("MY_TARGET_CANISTER_WASM_PATH".to_string()),
-                ty: CanisterType::Coverage,
-            },
-            // Add other canisters here if needed
-        ],
-    ));
+    // Define the canisters for the test environment.
+    // The `Coverage` canister will be instrumented automatically.
+    let canisters = vec![
+        CanisterInfo {
+            name: "my_target_canister".to_string(),
+            ty: CanisterType::Coverage,
+            // Specify the path to your pre-compiled Wasm.
+            // For complex builds, you can use a build.rs and WasmPath::EnvVar.
+            wasm_path: WasmPath::Path("path/to/your/canister.wasm".to_string()),
+            id: None,
+        },
+        // Add any other supporting canisters here.
+    ];
 
+    let mut fuzzer = MyFuzzer(FuzzerState::new("my_fuzzer", canisters));
     fuzzer.run();
 }
 ```
 
-## Reproducing a Crash
+## Reproduce a Crash
 
-When the fuzzer finds a crash, it saves the input that caused it to the `crashes` directory. You can use the `test_one_input` method to debug a specific input without running the full fuzzing loop.
+When a crash is found, the input is saved to the `artifacts/.../crashes/` directory. Use the `test_one_input` method to reproduce it for debugging.
 
-1.  **Locate the Crashing Input**: Find an input file in a path like `target/artifacts/examples/my_fuzzer/<timestamp>/crashes/<input_hash>`.
+1.  **Find the Crash File:** Copy the path to a crash input file from the fuzzer's output directory.
 
-2.  **Modify `main.rs`**: In your fuzzer's `main` function, comment out the call to `run()` and add a call to `test_one_input()`.
-
+2.  **Modify `main` to Test One Input:**
     ```rust
-    // examples/my_fuzzer/src/main.rs
     use std::fs;
 
-    // ... (other fuzzer code from the "Creating a New Fuzzer" section)
-
     fn main() {
-        let mut fuzzer = MyFuzzer(FuzzerState::new(
-            "my_fuzzer",
-            vec![
-                CanisterInfo {
-                    id: None,
-                    name: "my_target_canister".to_string(),
-                    wasm_path: WasmPath::EnvVar("MY_TARGET_CANISTER_WASM_PATH".to_string()),
-                    ty: CanisterType::Coverage,
-                },
-                // Add other canisters here if needed
-            ],
-        ));
+        // ... (fuzzer and canister setup from above)
+        let mut fuzzer = MyFuzzer(FuzzerState::new("my_fuzzer", canisters));
 
-        // To run the fuzzer:
-        // fuzzer.run();
+        // fuzzer.run(); // Comment out the main fuzzing loop
 
-        // To reproduce and debug a specific crash:
-        // 1. Update the path to your crash file. The path is printed when the fuzzer starts.
-        let crash_input_path = "target/debug/build/my_fuzzer-abcdef123456/out/artifacts/my_fuzzer/20240101_1200/crashes/some_input_hash";
-        let crash_input = fs::read(crash_input_path).expect("Could not read crash file");
-
-        // 2. Call test_one_input with the crash data.
+        // Use test_one_input to reproduce a specific crash
+        let crash_input = fs::read("path/to/your/crash/file").unwrap();
         fuzzer.test_one_input(crash_input);
     }
     ```
-
-3.  **Run with a Debugger**: Compile and run your fuzzer. The output will show the `ExitKind` from the execution.
 
 ## License
 
