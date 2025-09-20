@@ -121,7 +121,7 @@ When a crash is found, the input is saved to the `artifacts/.../crashes/` direct
 
 ## How It Works
 
-The canister fuzzing framework integrates three key components to provide a powerful, coverage-guided fuzzing experience for Internet Computer canisters:
+The canister fuzzing framework integrates two main components:
 
 *   **`libafl` (Fuzzing Engine)**: At its core, the framework uses `libafl`, a state-of-the-art fuzzing library. `libafl` is responsible for the main fuzzing loop, which includes:
     *   Generating and mutating inputs.
@@ -129,9 +129,7 @@ The canister fuzzing framework integrates three key components to provide a powe
     *   Collecting code coverage feedback to guide future mutations.
     *   Managing the corpus of interesting inputs and reporting crashes.
 
-*   **`pocket-ic` (IC Emulator)**: To execute canister calls in a deterministic and high-performance environment, the framework uses `pocket-ic`. This component emulates the Internet Computer, allowing the fuzzer to install canisters, make calls, and check their state without relying on a live replica. Each fuzzing run gets a sandboxed IC environment.
-
-*   **Wasm Instrumentation**: To enable coverage-guided fuzzing, the target canister's Wasm module is automatically instrumented before being deployed to `pocket-ic`. This process modifies the Wasm to provide execution feedback to `libafl`.
+*   **Wasm Instrumentation**: To enable coverage-guided fuzzing, the target canister's Wasm module is automatically instrumented before being deployed. This process modifies the Wasm to provide execution feedback to `libafl`.
     *   **Instrumentation Pass**: The framework uses a Wasm-to-Wasm transformation pass. This pass analyzes the canister's code and injects small snippets of code at various points (typically at every basic block or edge).
     *   **Coverage Map**: A global array, known as the "coverage map" or "edges map," is added to the Wasm module's memory. This map is shared between the instrumented code and the fuzzer's feedback mechanism. Each entry in the map corresponds to a specific code block or branch in the original program.
     *   **Tracking Execution**: The injected code snippets are simple: they update the coverage map whenever they are executed. For example, a hit counter for a specific code block is incremented. This allows the fuzzer to know which parts of the canister were executed for a given input.
