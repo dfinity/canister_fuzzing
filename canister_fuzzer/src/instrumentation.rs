@@ -183,7 +183,7 @@ fn instrument_branches(
             ]);
 
             for instruction in local_function.body.instructions.get_ops() {
-                // Instrument all branch-like instructions
+                // Instrument all basic block instructions
                 match instruction {
                     Operator::If { .. }
                     | Operator::Else
@@ -191,7 +191,9 @@ fn instrument_branches(
                     | Operator::Loop { .. }
                     | Operator::Br { .. }
                     | Operator::BrIf { .. }
-                    | Operator::BrTable { .. } => {
+                    | Operator::BrTable { .. }
+                    | Operator::Return { .. }
+                    | Operator::End { .. } => {
                         let curr_location = rng.gen_range(
                             0..AFL_COVERAGE_MAP_SIZE * afl_prev_loc_indices.len() as i32,
                         );
