@@ -14,7 +14,6 @@ path = "src/motoko_diff.rs"
 [dependencies]
 candid = { workspace = true }
 canister_fuzzer = { path = "../../canister_fuzzer/" }
-getrandom = { workspace = true }
 k256 = { workspace = true }
 pocket-ic = { workspace = true }
 sha2 = { workspace = true }

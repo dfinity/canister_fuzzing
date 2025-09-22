@@ -61,7 +61,7 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
             let canister_id = test.create_canister();
             test.add_cycles(canister_id, u128::MAX / 2);
             let module =
-                instrument_wasm_for_fuzzing(&read_canister_bytes(info.wasm_path.clone()), 1);
+                instrument_wasm_for_fuzzing(&read_canister_bytes(info.wasm_path.clone()), 8);
             test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);
         }
@@ -71,12 +71,19 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         let test = self.get_state_machine();
 
         let bytes: Vec<u8> = input.into();
+        if bytes.len() < 64 {
+            return ExitKind::Ok;
+        }
+
         let mut key = [0u8; 32];
-        getrandom::fill(&mut key).unwrap();
+        key.copy_from_slice(&bytes[..32]);
+
         let mut k = [0u8; 32];
-        getrandom::fill(&mut k).unwrap();
+        k.copy_from_slice(&bytes[32..64]);
+
         let mut hasher = Sha256::new();
-        hasher.update(bytes);
+        hasher.update(&bytes[64..]);
+
         let digest = hasher.finalize();
         let b = digest.as_slice().to_vec();
         let payload = candid::Encode!(&b, &key, &k).unwrap();

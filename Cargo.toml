@@ -27,7 +27,6 @@ arbitrary = { version = "1.4.1", features = ["derive"] }
 candid = { version = "0.10.17", features = ["all"] }
 candid_parser = "0.1.4"
 chrono = "0.4.41"
-getrandom = "0.3"
 ic-cdk = "0.18.5"
 ic-cdk-macros = "0.18.5"
 ic-management-canister-types = "0.4.1"
