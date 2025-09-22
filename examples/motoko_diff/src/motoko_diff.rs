@@ -1,7 +1,8 @@
 use candid::{Decode, Encode, Principal};
 use canister_fuzzer::libafl::executors::ExitKind;
 use canister_fuzzer::libafl::inputs::ValueInput;
-use k256::elliptic_curve::PrimeField;
+use k256::U256;
+use k256::elliptic_curve::ops::Reduce;
 use k256::{
     Scalar, Secp256k1,
     ecdsa::{Signature, hazmat},
@@ -76,17 +77,19 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         }
 
         let mut key = [0u8; 32];
-        key.copy_from_slice(&bytes[..32]);
+        let key_inner = Scalar::reduce(U256::from_be_slice(&bytes[..32]));
+        key.copy_from_slice(&key_inner.to_bytes());
 
         let mut k = [0u8; 32];
-        k.copy_from_slice(&bytes[32..64]);
+        let k_inner = Scalar::reduce(U256::from_be_slice(&bytes[32..64]));
+        k.copy_from_slice(&k_inner.to_bytes());
 
         let mut hasher = Sha256::new();
         hasher.update(&bytes[64..]);
 
         let digest = hasher.finalize();
-        let b = digest.as_slice().to_vec();
-        let payload = candid::Encode!(&b, &key, &k).unwrap();
+        let msg = digest.as_slice().to_vec();
+        let payload = candid::Encode!(&msg, &key, &k).unwrap();
         let result = test.update_call(
             self.get_coverage_canister_id(),
             Principal::anonymous(),
@@ -98,11 +101,8 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
 
         let exit_status = if exit_status == ExitKind::Ok && result.is_ok() {
             let result = Decode!(&result.unwrap(), Vec<u8>).unwrap();
-            let d = Scalar::from_repr(key.into()).unwrap();
-            let k = Scalar::from_repr(k.into()).unwrap();
-
             let (signature, _): (Signature, _) =
-                hazmat::sign_prehashed::<Secp256k1, Scalar>(&d, k, &digest).unwrap();
+                hazmat::sign_prehashed::<Secp256k1, Scalar>(&key_inner, k_inner, &digest).unwrap();
             let signature_old = Signature::from_der(&result).unwrap();
 
             if signature != signature_old {
