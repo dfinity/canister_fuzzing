@@ -3,6 +3,7 @@ name = "decode_candid_by_instructions"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license.workspace = true
 publish = false
 
 build = "build.rs"

@@ -20,6 +20,7 @@ resolver = "2"
 version = "0.1.0"
 edition = "2024"
 authors = ["DFINITY Stiftung <product-security@dfinity.org>"]
+license = "Apache-2.0"
 
 [workspace.dependencies]
 anyhow = "1.0.75"
