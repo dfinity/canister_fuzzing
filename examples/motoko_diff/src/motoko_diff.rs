@@ -101,12 +101,13 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
 
         let exit_status = if exit_status == ExitKind::Ok && result.is_ok() {
             let result = Decode!(&result.unwrap(), Vec<u8>).unwrap();
-            let (signature, _): (Signature, _) =
-                hazmat::sign_prehashed::<Secp256k1, Scalar>(&key_inner, k_inner, &digest).unwrap();
-            let signature_old = Signature::from_der(&result).unwrap();
-
-            if signature != signature_old {
-                return ExitKind::Crash;
+            if let Ok((signature, _)) =
+                hazmat::sign_prehashed::<Secp256k1, Scalar>(&key_inner, k_inner, &digest)
+            {
+                let signature_old = Signature::from_der(&result).unwrap();
+                if signature != signature_old {
+                    return ExitKind::Crash;
+                }
             }
             ExitKind::Ok
         } else {
