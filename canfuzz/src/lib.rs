@@ -11,10 +11,10 @@
 //! fuzzing campaign.
 //!
 //! ```no_run
-//! use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
-//! use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
-//! use canister_fuzzer::libafl::executors::ExitKind;
-//! use canister_fuzzer::libafl::inputs::BytesInput;
+//! use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+//! use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
+//! use canfuzz::libafl::executors::ExitKind;
+//! use canfuzz::libafl::inputs::BytesInput;
 //! use std::path::PathBuf;
 //!
 //! // 1. Define a struct for your fuzzer.

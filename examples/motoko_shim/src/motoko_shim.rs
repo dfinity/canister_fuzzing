@@ -1,16 +1,16 @@
 use candid::{Encode, Principal};
-use canister_fuzzer::libafl::executors::ExitKind;
-use canister_fuzzer::libafl::inputs::ValueInput;
+use canfuzz::libafl::executors::ExitKind;
+use canfuzz::libafl::inputs::ValueInput;
 use pocket_ic::PocketIcBuilder;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use slog::Level;
 
-use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
-use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
-use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
-use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
+use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+use canfuzz::instrumentation::instrument_wasm_for_fuzzing;
+use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
+use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 fn main() {
     let mut fuzzer_state = MotokoShimFuzzer(FuzzerState::new(

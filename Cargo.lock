@@ -314,7 +314,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "canister_fuzzer"
+name = "canfuzz"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -596,7 +596,7 @@ version = "0.1.0"
 dependencies = [
  "build_canister",
  "candid",
- "canister_fuzzer",
+ "canfuzz",
  "once_cell",
  "pocket-ic",
  "serde",
@@ -1868,7 +1868,7 @@ version = "0.1.0"
 dependencies = [
  "build_canister",
  "candid",
- "canister_fuzzer",
+ "canfuzz",
  "k256",
  "pocket-ic",
  "sha2",
@@ -1881,7 +1881,7 @@ version = "0.1.0"
 dependencies = [
  "build_canister",
  "candid",
- "canister_fuzzer",
+ "canfuzz",
  "pocket-ic",
  "slog",
 ]
@@ -2896,7 +2896,7 @@ version = "0.1.0"
 dependencies = [
  "build_canister",
  "candid",
- "canister_fuzzer",
+ "canfuzz",
  "once_cell",
  "pocket-ic",
  "slog",
@@ -3359,7 +3359,7 @@ version = "0.1.0"
 dependencies = [
  "build_canister",
  "candid",
- "canister_fuzzer",
+ "canfuzz",
  "once_cell",
  "pocket-ic",
  "serde",

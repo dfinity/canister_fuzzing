@@ -1,16 +1,16 @@
-use canister_fuzzer::custom::decode_map::{DECODING_MAP_OBSERVER_NAME, DecodingMapFeedback, MAP};
-use canister_fuzzer::custom::oom_exit_kind::OomLogic;
-use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
-use canister_fuzzer::instrumentation::instrument_wasm_for_fuzzing;
-use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
-use canister_fuzzer::util::{parse_canister_result_for_trap, read_canister_bytes};
+use canfuzz::custom::decode_map::{DECODING_MAP_OBSERVER_NAME, DecodingMapFeedback, MAP};
+use canfuzz::custom::oom_exit_kind::OomLogic;
+use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+use canfuzz::instrumentation::instrument_wasm_for_fuzzing;
+use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
+use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 use candid::{Decode, Encode, Principal};
-use canister_fuzzer::libafl::executors::ExitKind;
-use canister_fuzzer::libafl::feedback_or;
-use canister_fuzzer::libafl::inputs::ValueInput;
-use canister_fuzzer::libafl::observers::RefCellValueObserver;
-use canister_fuzzer::libafl::stages::{AflStatsStage, CalibrationStage};
+use canfuzz::libafl::executors::ExitKind;
+use canfuzz::libafl::feedback_or;
+use canfuzz::libafl::inputs::ValueInput;
+use canfuzz::libafl::observers::RefCellValueObserver;
+use canfuzz::libafl::stages::{AflStatsStage, CalibrationStage};
 use pocket_ic::PocketIcBuilder;
 use slog::Level;
 use std::fs::{self, File};
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::ptr::addr_of;
 use std::time::Duration;
 
-use canister_fuzzer::libafl::{
+use canfuzz::libafl::{
     Evaluator,
     corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
     events::SimpleEventManager,
@@ -34,9 +34,9 @@ use canister_fuzzer::libafl::{
     state::StdState,
 };
 
-use canister_fuzzer::libafl::monitors::SimpleMonitor;
+use canfuzz::libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
-use canister_fuzzer::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
+use canfuzz::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
 fn main() {
     let mut fuzzer_state = DecodeCandidFuzzer(FuzzerState::new(
@@ -149,7 +149,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let decoding_map_observer = unsafe {
             RefCellValueObserver::new(
                 DECODING_MAP_OBSERVER_NAME,
-                canister_fuzzer::libafl_bolts::ownedref::OwnedRef::from_ptr(addr_of!(MAP)),
+                canfuzz::libafl_bolts::ownedref::OwnedRef::from_ptr(addr_of!(MAP)),
             )
         };
 

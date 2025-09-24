@@ -14,7 +14,7 @@ path = "src/motoko_shim.rs"
 
 [dependencies]
 candid = { workspace = true }
-canister_fuzzer = { path = "../../canister_fuzzer/" }
+canfuzz = { path = "../../canfuzz/" }
 pocket-ic = { workspace = true }
 slog = { workspace = true }
 

@@ -8,11 +8,11 @@ To build a fuzzer, one must implement the `FuzzerOrchestrator` trait. This invol
 
 ```rust
 // my_fuzzer/src/main.rs
-use canister_fuzzer::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
-use canister_fuzzer::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
-use canister_fuzzer::util::parse_canister_result_for_trap;
-use canister_fuzzer::libafl::executors::ExitKind;
-use canister_fuzzer::libafl::inputs::BytesInput;
+use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
+use canfuzz::util::parse_canister_result_for_trap;
+use canfuzz::libafl::executors::ExitKind;
+use canfuzz::libafl::inputs::BytesInput;
 use candid::Principal;
 
 // 1. Define a struct for the fuzzer state
