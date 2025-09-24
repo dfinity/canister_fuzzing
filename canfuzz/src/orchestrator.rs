@@ -19,7 +19,7 @@ use std::sync::Arc;
 use crate::custom::oom_exit_kind::OomLogic;
 use crate::libafl::{
     Evaluator,
-    corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
+    corpus::CachedOnDiskCorpus,
     events::SimpleEventManager,
     executors::{ExitKind, inprocess::InProcessExecutor},
     feedbacks::{CrashFeedback, map::AflMapFeedback},
@@ -202,8 +202,8 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
 
         let mut state = StdState::new(
             StdRand::with_seed(current_nanos()),
-            InMemoryOnDiskCorpus::new(self.input_dir()).unwrap(),
-            InMemoryOnDiskCorpus::no_meta(self.crashes_dir()).unwrap(),
+            CachedOnDiskCorpus::new(self.input_dir(), 512).unwrap(),
+            CachedOnDiskCorpus::new(self.crashes_dir(), 512).unwrap(),
             &mut feedback,
             &mut objective,
         )

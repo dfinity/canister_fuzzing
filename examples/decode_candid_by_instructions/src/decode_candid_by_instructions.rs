@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use canfuzz::libafl::{
     Evaluator,
-    corpus::inmemory_ondisk::InMemoryOnDiskCorpus,
+    corpus::CachedOnDiskCorpus,
     events::SimpleEventManager,
     executors::inprocess::InProcessExecutor,
     feedbacks::{CrashFeedback, ExitKindFeedback, TimeoutFeedback, map::AflMapFeedback},
@@ -174,8 +174,8 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
 
         let mut state = StdState::new(
             StdRand::with_seed(current_nanos()),
-            InMemoryOnDiskCorpus::no_meta(self.input_dir()).unwrap(),
-            InMemoryOnDiskCorpus::no_meta(self.crashes_dir()).unwrap(),
+            CachedOnDiskCorpus::new(self.input_dir(), 512).unwrap(),
+            CachedOnDiskCorpus::new(self.crashes_dir(), 512).unwrap(),
             &mut feedback,
             &mut objective,
         )
