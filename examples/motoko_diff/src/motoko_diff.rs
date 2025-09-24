@@ -84,6 +84,10 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         let k_inner = Scalar::reduce(U256::from_be_slice(&bytes[32..64]));
         k.copy_from_slice(&k_inner.to_bytes());
 
+        if key.iter().all(|&x| x == 0) || k.iter().all(|&x| x == 0) {
+            return ExitKind::Ok;
+        }
+
         let mut hasher = Sha256::new();
         hasher.update(&bytes[64..]);
 
