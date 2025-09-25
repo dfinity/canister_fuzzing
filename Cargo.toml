@@ -25,7 +25,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 anyhow = "1.0.75"
 arbitrary = { version = "1.4.1", features = ["derive"] }
-candid = { version = "0.10.17", features = ["all"] }
+candid = { version = "0.10.19", features = ["all"] }
 candid_parser = "0.1.4"
 chrono = "0.4.41"
 ic-cdk = "0.18.5"

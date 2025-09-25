@@ -43,7 +43,7 @@ fn main() {
         "decode_candid_by_instructions",
         vec![CanisterInfo {
             id: None,
-            name: "candid_decode".to_string(),
+            name: "decode_candid".to_string(),
             wasm_path: WasmPath::EnvVar("DECODE_CANDID_WASM_PATH".to_string()),
             ty: CanisterType::Coverage,
         }],
@@ -82,7 +82,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
             let canister_id = test.create_canister();
             test.add_cycles(canister_id, u128::MAX / 2);
             let module =
-                instrument_wasm_for_fuzzing(&read_canister_bytes(info.wasm_path.clone()), 4);
+                instrument_wasm_for_fuzzing(&read_canister_bytes(info.wasm_path.clone()), 8);
             test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);
         }
@@ -96,7 +96,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let result = test.update_call(
             self.get_coverage_canister_id(),
             Principal::anonymous(),
-            "parse_candid",
+            "decode",
             Encode!(&bytes).unwrap(),
         );
 
