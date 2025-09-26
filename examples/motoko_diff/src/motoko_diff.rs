@@ -118,8 +118,7 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
             exit_status
         };
 
-        test.advance_time(Duration::from_secs(1));
-        test.tick();
+        test.advance_time(Duration::from_secs(60));
         exit_status
     }
 }

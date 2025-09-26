@@ -92,8 +92,7 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
         );
 
         let exit_status = parse_canister_result_for_trap(result);
-        test.advance_time(Duration::from_secs(1));
-        test.tick();
+        test.advance_time(Duration::from_secs(60));
 
         exit_status
     }

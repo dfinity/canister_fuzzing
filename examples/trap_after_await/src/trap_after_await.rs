@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use candid::{Decode, Encode, Principal};
 use canfuzz::libafl::executors::ExitKind;
@@ -221,6 +222,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
             println!("Results fail b1 : {b1}, b2 : {b2}");
             return ExitKind::Crash;
         }
+        test.advance_time(Duration::from_secs(60));
         ExitKind::Ok
     }
 }

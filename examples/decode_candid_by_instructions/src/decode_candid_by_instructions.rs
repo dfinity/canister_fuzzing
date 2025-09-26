@@ -113,8 +113,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
             0
         };
 
-        test.advance_time(Duration::from_secs(1));
-        test.tick();
+        test.advance_time(Duration::from_secs(60));
 
         let ratio = instructions / bytes.len() as u64;
         let previous_ratio = unsafe { MAP.borrow().previous_ratio };
