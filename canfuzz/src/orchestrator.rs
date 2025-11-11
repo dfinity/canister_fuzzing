@@ -132,8 +132,8 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
 
     /// Fetches the coverage map from the instrumented canister and updates the global `COVERAGE_MAP`.
     ///
-    /// It makes a query call to the `export_coverage` function on the coverage canister.
-    /// If the query fails, the coverage map is not updated.
+    /// It makes a update call to the `__export_coverage_for_afl` function on the coverage canister.
+    /// If the update fails, the coverage map is not updated.
     #[allow(static_mut_refs)]
     fn set_coverage_map(&self) {
         let test = self.get_state_machine();
