@@ -133,7 +133,7 @@ The canister fuzzing framework integrates two main components:
     *   **Instrumentation Pass**: The framework uses a Wasm-to-Wasm transformation pass. This pass analyzes the canister's code and injects small snippets of code at various points (typically at every basic block or edge).
     *   **Coverage Map**: A global array, known as the "coverage map" or "edges map," is added to the Wasm module's memory. This map is shared between the instrumented code and the fuzzer's feedback mechanism. Each entry in the map corresponds to a specific code block or branch in the original program.
     *   **Tracking Execution**: The injected code snippets are simple: they update the coverage map whenever they are executed. For example, a hit counter for a specific code block is incremented. This allows the fuzzer to know which parts of the canister were executed for a given input.
-    *   **Exporting Coverage Data**: Since the canister runs in the sandboxed `pocket-ic` environment, a special query method (e.g., `__get_coverage`) is added to the Wasm module. After each test case, the fuzzer calls this method to retrieve the coverage map from the canister's memory. This data is then passed to `libafl` to guide the next round of mutations.
+    *   **Exporting Coverage Data**: Since the canister runs in the sandboxed `pocket-ic` environment, a special update method (e.g., `__export_coverage_for_afl`) is added to the Wasm module. After each test case, the fuzzer calls this method to retrieve the coverage map from the canister's memory. This data is then passed to `libafl` to guide the next round of mutations.
 
 ## License
 

@@ -80,7 +80,7 @@ fn instrument_for_afl(module: &mut Module<'_>, history_size: usize) -> Result<()
     );
 
     inject_afl_coverage_export(module, history_size, afl_mem_ptr_idx)?;
-    println!("  -> Injected `canister_query export_coverage` function.");
+    println!("  -> Injected `canister_update __export_coverage_for_afl` function.");
 
     instrument_branches(module, &afl_prev_loc_indices, afl_mem_ptr_idx);
     println!("  -> Instrumented branch instructions in all functions.");
@@ -116,8 +116,8 @@ fn inject_globals(module: &mut Module<'_>, history_size: usize) -> (Vec<GlobalID
 
 /// Injects the `canister_update `[COVERAGE_FN_EXPORT_NAME]` function.
 ///
-/// This exported function allows the fuzzer orchestrator to query the canister
-/// and retrieve the coverage map. It uses the `ic0.msg_reply_data_append` and
+/// This exported function allows the fuzzer orchestrator to read the canister,
+/// retrieve the coverage map and reset it. It uses the `ic0.msg_reply_data_append` and
 /// `ic0.msg_reply` System API calls to send the contents of the coverage map
 /// back to the caller.
 fn inject_afl_coverage_export<'a>(
