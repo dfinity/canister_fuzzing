@@ -12,6 +12,8 @@
 
 use anyhow::Result;
 use rand::Rng;
+use rand::RngCore;
+use rand::SeedableRng;
 use wirm::ir::function::FunctionBuilder;
 use wirm::ir::id::{FunctionID, GlobalID, LocalID};
 use wirm::ir::module::module_functions::FuncKind;
@@ -161,7 +163,19 @@ fn instrument_branches(
 ) {
     let instrumentation_function =
         afl_instrumentation_slice(module, afl_prev_loc_indices, afl_mem_ptr_idx);
-    let mut rng = rand::thread_rng();
+    let seed: u32 = rand::thread_rng().next_u32();
+    println!("The seed used for instrumentation is {seed}");
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
+
+    let mut create_instrumentation_ops = |ops: &mut Vec<Operator>| {
+        let curr_location = rng.gen_range(0..AFL_COVERAGE_MAP_SIZE as i32);
+        ops.push(Operator::I32Const {
+            value: curr_location,
+        });
+        ops.push(Operator::Call {
+            function_index: instrumentation_function.0,
+        });
+    };
 
     for (function_index, function) in module.functions.iter_mut().enumerate() {
         if matches!(function.kind(), FuncKind::Local(_))
@@ -170,42 +184,23 @@ fn instrument_branches(
             let local_function = function.unwrap_local_mut();
             let mut new_instructions = Vec::with_capacity(local_function.body.num_instructions * 2);
 
-            // Instrument the start of the function
-            let curr_location =
-                rng.gen_range(0..AFL_COVERAGE_MAP_SIZE * afl_prev_loc_indices.len() as i32);
-            new_instructions.extend([
-                Operator::I32Const {
-                    value: curr_location,
-                },
-                Operator::Call {
-                    function_index: instrumentation_function.0,
-                },
-            ]);
+            create_instrumentation_ops(&mut new_instructions);
 
             for instruction in local_function.body.instructions.get_ops() {
-                // Instrument all basic block instructions
                 match instruction {
-                    Operator::If { .. }
-                    | Operator::Else
-                    | Operator::Block { .. }
+                    Operator::Block { .. }
                     | Operator::Loop { .. }
-                    | Operator::Br { .. }
+                    | Operator::If { .. }
+                    | Operator::Else => {
+                        new_instructions.push(instruction.clone());
+                        create_instrumentation_ops(&mut new_instructions);
+                    }
+                    Operator::Br { .. }
                     | Operator::BrIf { .. }
                     | Operator::BrTable { .. }
-                    | Operator::Return { .. }
-                    | Operator::End { .. } => {
-                        let curr_location = rng.gen_range(
-                            0..AFL_COVERAGE_MAP_SIZE * afl_prev_loc_indices.len() as i32,
-                        );
-                        new_instructions.extend([
-                            Operator::I32Const {
-                                value: curr_location,
-                            },
-                            Operator::Call {
-                                function_index: instrumentation_function.0,
-                            },
-                            instruction.clone(),
-                        ]);
+                    | Operator::Return => {
+                        create_instrumentation_ops(&mut new_instructions);
+                        new_instructions.push(instruction.clone());
                     }
                     _ => new_instructions.push(instruction.clone()),
                 }
