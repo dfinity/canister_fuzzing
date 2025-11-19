@@ -24,6 +24,20 @@ use wirm::{DataType, InitInstr, Module, Opcode};
 
 use crate::constants::{AFL_COVERAGE_MAP_SIZE, API_VERSION_IC0, COVERAGE_FN_EXPORT_NAME};
 
+pub struct InstrumentationArgs {
+    /// The raw Wasm module to instrument.
+    wasm_bytes: Vec<u8>,
+    /// The number of previous locations to track (must be 1, 2, 4, or 8).
+    history_size: usize,
+    /// The seed to use for instrumentation.
+    seed: Seed,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Seed {
+    Random,
+    Static(u32),
+}
 /// A global, mutable static array to hold the coverage map.
 ///
 /// # Safety
@@ -42,20 +56,22 @@ pub static mut COVERAGE_MAP: &mut [u8] = &mut [0; AFL_COVERAGE_MAP_SIZE as usize
 ///
 /// # Arguments
 ///
-/// * `wasm_bytes` - The raw Wasm module to instrument.
-/// * `history_size` - The number of previous locations to track (must be 1, 2, 4, or 8).
-pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8], history_size: usize) -> Vec<u8> {
+/// * `wasm_bytes` -
+/// * `history_size` -
+pub fn instrument_wasm_for_fuzzing(instrumentation_args: InstrumentationArgs) -> Vec<u8> {
     assert!(
-        matches!(history_size, 1 | 2 | 4 | 8),
+        matches!(instrumentation_args.history_size, 1 | 2 | 4 | 8),
         "History size must be 1, 2, 4, or 8"
     );
-    let mut module = Module::parse(wasm_bytes, false).expect("Failed to parse module with wirm");
+    let mut module = Module::parse(&instrumentation_args.wasm_bytes, false)
+        .expect("Failed to parse module with wirm");
 
-    instrument_for_afl(&mut module, history_size)
+    instrument_for_afl(&mut module, &instrumentation_args)
         .expect("Unable to instrument wasm module for AFL");
 
     // Sorry it has to be this way :(
-    let buf = vec![0u8; AFL_COVERAGE_MAP_SIZE as usize * history_size].into_boxed_slice();
+    let buf = vec![0u8; AFL_COVERAGE_MAP_SIZE as usize * instrumentation_args.history_size]
+        .into_boxed_slice();
     let buf: &'static mut [u8] = Box::leak(buf);
     unsafe {
         COVERAGE_MAP = buf;
@@ -75,16 +91,25 @@ pub fn instrument_wasm_for_fuzzing(wasm_bytes: &[u8], history_size: usize) -> Ve
 /// 2. Injects the `[COVERAGE_FN_EXPORT_NAME]` update function to expose the coverage map.
 /// 3. Instruments all functions by inserting calls to a helper function at the
 ///    start of each function and before each branch instruction.
-fn instrument_for_afl(module: &mut Module<'_>, history_size: usize) -> Result<()> {
-    let (afl_prev_loc_indices, afl_mem_ptr_idx) = inject_globals(module, history_size);
+fn instrument_for_afl(
+    module: &mut Module<'_>,
+    instrumentation_args: &InstrumentationArgs,
+) -> Result<()> {
+    let (afl_prev_loc_indices, afl_mem_ptr_idx) =
+        inject_globals(module, instrumentation_args.history_size);
     println!(
         "  -> Injected globals: prev_locs @ indices {afl_prev_loc_indices:?}, mem_ptr @ index {afl_mem_ptr_idx:?}"
     );
 
-    inject_afl_coverage_export(module, history_size, afl_mem_ptr_idx)?;
+    inject_afl_coverage_export(module, instrumentation_args.history_size, afl_mem_ptr_idx)?;
     println!("  -> Injected `canister_update __export_coverage_for_afl` function.");
 
-    instrument_branches(module, &afl_prev_loc_indices, afl_mem_ptr_idx);
+    instrument_branches(
+        module,
+        &afl_prev_loc_indices,
+        afl_mem_ptr_idx,
+        instrumentation_args.seed,
+    );
     println!("  -> Instrumented branch instructions in all functions.");
 
     Ok(())
@@ -160,10 +185,15 @@ fn instrument_branches(
     module: &mut Module<'_>,
     afl_prev_loc_indices: &[GlobalID],
     afl_mem_ptr_idx: GlobalID,
+    seed: Seed,
 ) {
     let instrumentation_function =
         afl_instrumentation_slice(module, afl_prev_loc_indices, afl_mem_ptr_idx);
-    let seed: u32 = rand::thread_rng().next_u32();
+
+    let seed = match seed {
+        Seed::Random => rand::thread_rng().next_u32(),
+        Seed::Static(s) => s,
+    };
     println!("The seed used for instrumentation is {seed}");
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
 
