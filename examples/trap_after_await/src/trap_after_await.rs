@@ -9,7 +9,7 @@ use pocket_ic::PocketIcBuilder;
 use slog::Level;
 
 use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
-use canfuzz::instrumentation::instrument_wasm_for_fuzzing;
+use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canfuzz::util::read_canister_bytes;
 
@@ -72,10 +72,13 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
 
         let main_canister_id = test.create_canister();
         test.add_cycles(main_canister_id, u128::MAX / 2);
-        let module = instrument_wasm_for_fuzzing(
-            &read_canister_bytes(self.0.get_canister_wasm_path_by_name("transfer").clone()),
-            8,
-        );
+        let module = instrument_wasm_for_fuzzing(InstrumentationArgs {
+            wasm_bytes: read_canister_bytes(
+                self.0.get_canister_wasm_path_by_name("transfer").clone(),
+            ),
+            history_size: 8,
+            seed: Seed::Random,
+        });
         test.install_canister(
             main_canister_id,
             module,

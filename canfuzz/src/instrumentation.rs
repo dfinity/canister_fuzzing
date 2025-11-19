@@ -24,18 +24,25 @@ use wirm::{DataType, InitInstr, Module, Opcode};
 
 use crate::constants::{AFL_COVERAGE_MAP_SIZE, API_VERSION_IC0, COVERAGE_FN_EXPORT_NAME};
 
+/// Arguments for configuring the Wasm instrumentation process.
 pub struct InstrumentationArgs {
     /// The raw Wasm module to instrument.
-    wasm_bytes: Vec<u8>,
+    pub wasm_bytes: Vec<u8>,
     /// The number of previous locations to track (must be 1, 2, 4, or 8).
-    history_size: usize,
+    pub history_size: usize,
     /// The seed to use for instrumentation.
-    seed: Seed,
+    pub seed: Seed,
 }
 
+/// Specifies the seed for the random number generator used during instrumentation.
+///
+/// Using a static seed allows for deterministic and reproducible instrumentation,
+/// which is crucial for debugging and consistent testing environments.
 #[derive(Copy, Clone, Debug)]
 pub enum Seed {
+    /// A randomly generated seed will be used.
     Random,
+    /// A user-provided static seed will be used.
     Static(u32),
 }
 /// A global, mutable static array to hold the coverage map.
@@ -56,8 +63,7 @@ pub static mut COVERAGE_MAP: &mut [u8] = &mut [0; AFL_COVERAGE_MAP_SIZE as usize
 ///
 /// # Arguments
 ///
-/// * `wasm_bytes` -
-/// * `history_size` -
+/// * `instrumentation_args` - A struct containing the Wasm bytes, history size, and instrumentation seed.
 pub fn instrument_wasm_for_fuzzing(instrumentation_args: InstrumentationArgs) -> Vec<u8> {
     assert!(
         matches!(instrumentation_args.history_size, 1 | 2 | 4 | 8),
@@ -198,7 +204,7 @@ fn instrument_branches(
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
 
     let mut create_instrumentation_ops = |ops: &mut Vec<Operator>| {
-        let curr_location = rng.gen_range(0..AFL_COVERAGE_MAP_SIZE as i32);
+        let curr_location = rng.gen_range(0..AFL_COVERAGE_MAP_SIZE);
         ops.push(Operator::I32Const {
             value: curr_location,
         });

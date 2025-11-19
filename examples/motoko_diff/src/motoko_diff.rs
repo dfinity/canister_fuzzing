@@ -15,7 +15,7 @@ use std::time::Duration;
 use slog::Level;
 
 use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
-use canfuzz::instrumentation::instrument_wasm_for_fuzzing;
+use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
 
@@ -61,8 +61,11 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         for info in self.0.get_iter_mut_canister_info() {
             let canister_id = test.create_canister();
             test.add_cycles(canister_id, u128::MAX / 2);
-            let module =
-                instrument_wasm_for_fuzzing(&read_canister_bytes(info.wasm_path.clone()), 8);
+            let module = instrument_wasm_for_fuzzing(InstrumentationArgs {
+                wasm_bytes: read_canister_bytes(info.wasm_path.clone()),
+                history_size: 8,
+                seed: Seed::Random,
+            });
             test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);
         }
