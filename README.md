@@ -27,7 +27,9 @@ impl FuzzerStateProvider for MyFuzzer {
 impl FuzzerOrchestrator for MyFuzzer {
     /// Sets up the IC environment and installs canisters.
     fn init(&mut self) {
-        self.default_init(); // A helper that initializes PocketIc and installs canisters
+        // A helper that initializes PocketIc and installs canisters.
+        // Canister are expected to be instrumented here.
+        self.default_init(); 
     }
 
     /// Executes one test case with a given input.
