@@ -233,7 +233,7 @@ dependencies = [
 
 [[package]]
 name = "build_canister"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "bumpalo"
@@ -315,7 +315,7 @@ dependencies = [
 
 [[package]]
 name = "canfuzz"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "candid",
@@ -581,7 +581,7 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "decode_candid"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "candid",
  "candid_parser",
@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "decode_candid_by_instructions"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "build_canister",
  "candid",
@@ -1590,7 +1590,7 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "ledger"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "candid",
  "candid_parser",
@@ -1864,7 +1864,7 @@ dependencies = [
 
 [[package]]
 name = "motoko_diff"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "build_canister",
  "candid",
@@ -1877,7 +1877,7 @@ dependencies = [
 
 [[package]]
 name = "motoko_shim"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "build_canister",
  "candid",
@@ -2877,7 +2877,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "stable_memory"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arbitrary",
  "candid",
@@ -2892,7 +2892,7 @@ dependencies = [
 
 [[package]]
 name = "stable_memory_ops"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "build_canister",
  "candid",
@@ -3344,7 +3344,7 @@ dependencies = [
 
 [[package]]
 name = "transfer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "candid",
  "candid_parser",
@@ -3355,7 +3355,7 @@ dependencies = [
 
 [[package]]
 name = "trap_after_await"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "build_canister",
  "candid",
