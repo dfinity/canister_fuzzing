@@ -95,7 +95,7 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
         hasher.update(&bytes[64..]);
 
         let digest = hasher.finalize();
-        let msg = digest.as_slice().to_vec();
+        let msg = digest.to_vec();
         let payload = candid::Encode!(&msg, &key, &k).unwrap();
         let result = test.update_call(
             self.get_coverage_canister_id(),

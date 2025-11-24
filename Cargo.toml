@@ -33,8 +33,6 @@ ic-cdk-macros = "0.18.5"
 ic-management-canister-types = "0.4.1"
 ic-stable-structures = "0.7.0"
 k256 = { version = "0.13", features = ["ecdsa-core"] }
-libafl = { version = "0.15.3", features = ["std"] }
-libafl_bolts = "0.15.3"
 once_cell = "1.21.3"
 pocket-ic = "10.0.0"
 rand = "0.8.5"
@@ -44,4 +42,8 @@ serde_bytes = "0.11.17"
 serde_cbor = "0.11.2"
 sha2 = "0.10.9"
 slog = "2.7.0"
-wirm = { version = "2.0.0", features = ["parallel"] }
+
+# pinned deps
+libafl = { version = "0.15.3", features = ["std"] }
+libafl_bolts = "=0.15.3"
+wirm = { version = "=2.0.0", features = ["parallel"] }
