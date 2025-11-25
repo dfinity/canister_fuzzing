@@ -161,7 +161,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         });
         let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
         let calibration_stage = CalibrationStage::new(&afl_map_feedback);
-        let mut feedback = feedback_or!(decoding_feedback, afl_map_feedback);
+        let mut feedback = feedback_or!(decoding_feedback, afl_map_feedback.clone());
 
         // The objective is to find crashes, timeouts or oom
         let crash_feedback = CrashFeedback::new();
@@ -170,7 +170,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         let mut objective = feedback_or!(crash_feedback, timeout_feedback, oom_feedback);
 
         let stats_stage = AflStatsStage::builder()
-            .map_observer(&hitcount_map_observer)
+            .map_feedback(&afl_map_feedback)
             .build()
             .unwrap();
 

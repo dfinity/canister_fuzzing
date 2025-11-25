@@ -69,7 +69,7 @@ pub fn instrument_wasm_for_fuzzing(instrumentation_args: InstrumentationArgs) ->
         matches!(instrumentation_args.history_size, 1 | 2 | 4 | 8),
         "History size must be 1, 2, 4, or 8"
     );
-    let mut module = Module::parse(&instrumentation_args.wasm_bytes, false)
+    let mut module = Module::parse(&instrumentation_args.wasm_bytes, false, false)
         .expect("Failed to parse module with wirm");
 
     instrument_for_afl(&mut module, &instrumentation_args)
@@ -197,14 +197,14 @@ fn instrument_branches(
         afl_instrumentation_slice(module, afl_prev_loc_indices, afl_mem_ptr_idx);
 
     let seed = match seed {
-        Seed::Random => rand::thread_rng().next_u32(),
+        Seed::Random => rand::rng().next_u32(),
         Seed::Static(s) => s,
     };
     println!("The seed used for instrumentation is {seed}");
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
 
     let mut create_instrumentation_ops = |ops: &mut Vec<Operator>| {
-        let curr_location = rng.gen_range(0..AFL_COVERAGE_MAP_SIZE);
+        let curr_location = rng.random_range(0..AFL_COVERAGE_MAP_SIZE);
         ops.push(Operator::I32Const {
             value: curr_location,
         });
@@ -241,7 +241,12 @@ fn instrument_branches(
                     _ => new_instructions.push(instruction.clone()),
                 }
             }
-            local_function.body.instructions = Instructions::new(new_instructions);
+            // offsets are set to zero, as we are not interested in preserving them.
+            local_function.body.instructions = Instructions::new(
+                new_instructions.iter().map(|i| (i.clone(), 0)).collect(),
+                0,
+                false,
+            );
         }
     }
 }

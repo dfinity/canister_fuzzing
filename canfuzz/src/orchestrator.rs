@@ -185,7 +185,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
 
         // Feedback mechanisms tell the fuzzer if an input is "interesting"
         let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
-        let mut feedback = afl_map_feedback;
+        let mut feedback = afl_map_feedback.clone();
         let calibration_stage = CalibrationStage::new(&feedback);
 
         // The objective is to find crashes, timeouts or oom
@@ -196,7 +196,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
 
         // A stats stage to print statistics about the fuzzing run.
         let stats_stage = AflStatsStage::builder()
-            .map_observer(&hitcount_map_observer)
+            .map_feedback(&afl_map_feedback)
             .build()
             .unwrap();
 
