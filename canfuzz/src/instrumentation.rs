@@ -204,7 +204,8 @@ fn instrument_branches(
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed as u64);
 
     let mut create_instrumentation_ops = |ops: &mut Vec<Operator>| {
-        let curr_location = rng.random_range(0..AFL_COVERAGE_MAP_SIZE);
+        let curr_location =
+            rng.random_range(0..AFL_COVERAGE_MAP_SIZE * afl_prev_loc_indices.len() as i32);
         ops.push(Operator::I32Const {
             value: curr_location,
         });
