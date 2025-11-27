@@ -442,7 +442,7 @@ mod tests {
             if let GlobalKind::Local(local) = global {
                 assert_eq!(local.ty.content_type, ValType::I32);
                 assert_eq!(local.ty.mutable, mutable);
-                assert_eq!(local.ty.shared, false);
+                assert!(!local.ty.shared);
                 assert_eq!(local.init_expr.instructions().len(), 1);
                 assert_matches::assert_matches!(
                     local.init_expr.instructions()[0],
@@ -975,7 +975,7 @@ mod tests {
             instructions
                 .iter()
                 .filter(|o| !matches!(o, Operator::BrTable { targets: _ }))
-                .map(|o| o.clone())
+                .cloned()
                 .collect::<Vec<_>>(),
             exptected
         );
