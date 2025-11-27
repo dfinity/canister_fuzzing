@@ -29,7 +29,7 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: {{ env.RUST_VERSION }}
+          toolchain: "${{ env.RUST_VERSION }}"
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
 
@@ -44,7 +44,7 @@ jobs:
       - name: Setup MOPS
         uses: dfinity/setup-mops@3e94e453352269b34137b5ce49f09a8df81bed7d # v1.4.1
         with:
-          mops-version: {{ env.MOPS_VERSION }}
+          mops-version: "${{ env.MOPS_VERSION }}"
 
       - name: Check Format
         run: cargo fmt --all -- --check
