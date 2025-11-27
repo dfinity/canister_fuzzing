@@ -26,3 +26,9 @@ rand = { workspace = true }
 serde = { workspace = true }
 slog = { workspace = true }
 wirm = { workspace = true }
+
+[dev-dependencies]
+wat = { workspace = true }
+wasmprinter = { workspace = true }
+assert_matches = { workspace = true }
+difference = { workspace = true }

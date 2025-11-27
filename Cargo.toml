@@ -42,6 +42,10 @@ serde_bytes = "0.11.17"
 serde_cbor = "0.11.2"
 sha2 = "0.10.9"
 slog = "2.7.0"
+wat = "1.242.0"
+wasmprinter = "0.242.0"
+assert_matches = "1.5.0"
+difference = "2.0.0"
 
 # pinned deps
 libafl = { version = "=0.15.4", features = ["std"] }
