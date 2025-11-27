@@ -35,9 +35,11 @@ jobs:
 
       - name: Setup DFX
         run: |
-          DFX_VERSION=${DFX_VERSION} sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"
+          wget --output-document install-dfx.sh "https://internetcomputer.org/install.sh"
+          DFX_VERSION=${DFX_VERSION:=0.23.0} DFXVM_INIT_YES=true bash install-dfx.sh < <(yes Y)
           echo "$HOME/.local/share/dfx/bin" >> $GITHUB_PATH
           source "$HOME/.local/share/dfx/env"
+          rm install-dfx.sh
           dfx cache install
           echo "$HOME/bin" >> $GITHUB_PATH
 
