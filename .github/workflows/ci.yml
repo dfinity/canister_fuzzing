@@ -59,6 +59,6 @@ jobs:
         env:
           RUST_BACKTRACE: 1
 
-      - name: Run Custom Script
+      - name: Test examples
         run: |
           ./scripts/test_run.sh
