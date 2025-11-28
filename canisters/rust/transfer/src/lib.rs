@@ -74,34 +74,34 @@ async fn refund_balance() {
     if let Ok(_principal) = CallerGuard::new(caller) {
         let balance =
             LOCAL_BALANCES.with_borrow(|local_balance| local_balance.get(&caller).cloned());
-        if let Some(balance) = balance {
-            if balance > trap {
-                let callee = LEDGER_PRINCIPAL.get();
-                let _result = ic_cdk::call::Call::bounded_wait(callee, "update_balance")
-                    .with_arg(trap)
-                    .await
-                    .unwrap();
+        if let Some(balance) = balance
+            && balance > trap
+        {
+            let callee = LEDGER_PRINCIPAL.get();
+            let _result = ic_cdk::call::Call::bounded_wait(callee, "update_balance")
+                .with_arg(trap)
+                .await
+                .unwrap();
 
-                LOCAL_BALANCES
-                    .with_borrow_mut(|local_balance| local_balance.insert(caller, balance - trap));
+            LOCAL_BALANCES
+                .with_borrow_mut(|local_balance| local_balance.insert(caller, balance - trap));
 
-                // assume trap == 3278 creates a panic
-                // Single branch; directly equality check
-                // Not good for coverage
+            // assume trap == 3278 creates a panic
+            // Single branch; directly equality check
+            // Not good for coverage
 
-                // if trap == 3278_u64 {
-                //     panic!("Triggering a trap");
-                // }
+            // if trap == 3278_u64 {
+            //     panic!("Triggering a trap");
+            // }
 
-                // Multiple branch; byte equality check
-                // Good for coverage guided fuzzers
-                let trap_slice = trap.to_le_bytes();
-                if trap_slice[0] == 206
-                    && trap_slice[1] == 12
-                    && trap_slice[2..8].iter().all(|x| *x == 0)
-                {
-                    panic!("Triggering a trap");
-                }
+            // Multiple branch; byte equality check
+            // Good for coverage guided fuzzers
+            let trap_slice = trap.to_le_bytes();
+            if trap_slice[0] == 206
+                && trap_slice[1] == 12
+                && trap_slice[2..8].iter().all(|x| *x == 0)
+            {
+                panic!("Triggering a trap");
             }
         }
     }

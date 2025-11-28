@@ -143,7 +143,7 @@ impl FuzzerState {
     ///
     /// This is useful during the setup phase to populate the `id` field
     /// for each canister after it has been created in the state machine.
-    pub fn get_iter_mut_canister_info(&mut self) -> IterMut<CanisterInfo> {
+    pub fn get_iter_mut_canister_info(&mut self) -> IterMut<'_, CanisterInfo> {
         self.canisters.iter_mut()
     }
 }

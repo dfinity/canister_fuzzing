@@ -371,3 +371,843 @@ fn validate_wasm(wasm_bytes: &[u8]) -> Result<()> {
     println!("Validation of instrumented Wasm successful.");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use wirm::{ir::module::module_globals::GlobalKind, wasmparser::ValType};
+
+    use super::*;
+    #[test]
+    fn inject_globals_empty_module() {
+        let wat = wat::parse_str(
+            r#"
+                (module)
+            "#,
+        )
+        .unwrap();
+
+        let history_range: [usize; 4] = [1, 2, 4, 8];
+        for history_size in history_range {
+            let mut module = Module::parse(&wat, false, false).unwrap();
+            let (afl_prev_loc_indices, afl_mem_ptr_idx) = inject_globals(&mut module, history_size);
+
+            assert_eq!(afl_prev_loc_indices.len(), history_size);
+            (0..history_size)
+                .for_each(|index| assert_eq!(afl_prev_loc_indices[index], GlobalID(index as u32)));
+            assert_eq!(afl_mem_ptr_idx, GlobalID(history_size as u32));
+        }
+    }
+
+    #[test]
+    fn inject_globals_two_globals() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (global (;0;) (mut i32) i32.const 0)
+                    (global (;1;) (mut i32) i32.const 0)
+                )
+            "#,
+        )
+        .unwrap();
+
+        let offset: u32 = 2;
+
+        let history_range: [usize; 4] = [1, 2, 4, 8];
+        for history_size in history_range {
+            let mut module = Module::parse(&wat, false, false).unwrap();
+            let (afl_prev_loc_indices, afl_mem_ptr_idx) = inject_globals(&mut module, history_size);
+
+            assert_eq!(afl_prev_loc_indices.len(), history_size);
+            (0..history_size).for_each(|index| {
+                assert_eq!(afl_prev_loc_indices[index], GlobalID(index as u32 + offset))
+            });
+            assert_eq!(afl_mem_ptr_idx, GlobalID(history_size as u32 + offset));
+        }
+    }
+
+    #[test]
+    fn inject_globals_check_global_values() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (global (;0;) (mut i32) i32.const 0)
+                    (global (;1;) (mut i32) i32.const 0)
+                )
+            "#,
+        )
+        .unwrap();
+
+        let validate_global = |global: GlobalKind, mutable: bool| {
+            assert_matches::assert_matches!(global, GlobalKind::Local(_));
+            if let GlobalKind::Local(local) = global {
+                assert_eq!(local.ty.content_type, ValType::I32);
+                assert_eq!(local.ty.mutable, mutable);
+                assert!(!local.ty.shared);
+                assert_eq!(local.init_expr.instructions().len(), 1);
+                assert_matches::assert_matches!(
+                    local.init_expr.instructions()[0],
+                    InitInstr::Value(Value::I32(0))
+                );
+            }
+        };
+
+        let history_range: [usize; 4] = [1, 2, 4, 8];
+        for history_size in history_range {
+            let mut module = Module::parse(&wat, false, false).unwrap();
+            let (afl_prev_loc_indices, afl_mem_ptr_idx) = inject_globals(&mut module, history_size);
+
+            for g in afl_prev_loc_indices.iter() {
+                let global = module.globals.get_kind(*g);
+                validate_global(global.clone(), true);
+            }
+            let global = module.globals.get_kind(afl_mem_ptr_idx);
+            validate_global(global.clone(), false);
+        }
+    }
+
+    #[test]
+    fn inject_ic0_imports_empty_module() {
+        let wat = wat::parse_str(
+            r#"
+                (module)
+            "#,
+        )
+        .unwrap();
+
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module).unwrap();
+
+        assert_eq!(data_append_idx, FunctionID(0));
+        assert_eq!(reply_idx, FunctionID(1));
+    }
+
+    #[test]
+    fn inject_ic0_imports_one_import() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (type (;0;) (func (param i32)))
+                    (import "ic0" "dummy" (func (;0;) (type 0)))
+                )
+            "#,
+        )
+        .unwrap();
+
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module).unwrap();
+
+        assert_eq!(data_append_idx, FunctionID(1));
+        assert_eq!(reply_idx, FunctionID(2));
+    }
+
+    #[test]
+    fn inject_ic0_imports_data_append_exists() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (type (;0;) (func (param i32 i32)))
+                    (import "ic0" "msg_reply_data_append" (func (;0;) (type 0)))
+                )
+            "#,
+        )
+        .unwrap();
+
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module).unwrap();
+
+        assert_eq!(data_append_idx, FunctionID(0));
+        assert_eq!(reply_idx, FunctionID(1));
+    }
+
+    #[test]
+    fn inject_ic0_imports_reply_exists() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (type (;0;) (func))
+                    (import "ic0" "msg_reply" (func (;0;) (type 0)))
+                )
+            "#,
+        )
+        .unwrap();
+
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module).unwrap();
+
+        assert_eq!(data_append_idx, FunctionID(1));
+        assert_eq!(reply_idx, FunctionID(0));
+    }
+
+    #[test]
+    fn inject_ic0_imports_both_exists() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (type (;0;) (func (param i32 i32)))
+                    (type (;1;) (func))
+                    (import "ic0" "msg_reply_data_append" (func (;0;) (type 0)))
+                    (import "ic0" "msg_reply" (func (;1;) (type 1)))
+                )
+            "#,
+        )
+        .unwrap();
+
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module).unwrap();
+
+        assert_eq!(data_append_idx, FunctionID(0));
+        assert_eq!(reply_idx, FunctionID(1));
+    }
+
+    /// Helper function to test equality between two generated Wasm modules
+    /// If they are not equal, it displays the textual difference of the WAT.
+    fn wasm_equality(generated: Vec<u8>, expected: Vec<u8>) {
+        // both are encoded slices
+        if generated != expected {
+            let generated_text = wasmprinter::print_bytes(&generated).unwrap();
+            let expected_text = wasmprinter::print_bytes(&expected).unwrap();
+            // It's nice to show textual diffs
+            difference::assert_diff!(generated_text.as_str(), expected_text.as_str(), "\n", 0)
+        }
+    }
+
+    #[test]
+    fn inject_instrumentation_function_history_1() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (memory (;0;) 1)
+                )
+            "#,
+        )
+        .unwrap();
+
+        let history_size = 1;
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (afl_prev_loc_indices, afl_mem_ptr_idx) = inject_globals(&mut module, history_size);
+        let instrumentation_function =
+            afl_instrumentation_slice(&mut module, &afl_prev_loc_indices, afl_mem_ptr_idx);
+        assert_eq!(instrumentation_function, FunctionID(0));
+        let expected_wasm = wat::parse_str(
+            r#"(module
+                            (type (;0;) (func (param i32)))
+                            (memory (;0;) 1)
+                            (global (;0;) (mut i32) i32.const 0)
+                            (global (;1;) i32 i32.const 0)
+                            (func (;0;) (type 0) (param i32)
+                                (local i32)
+                                local.get 0
+                                global.get 0
+                                i32.xor
+                                global.get 1
+                                i32.add
+                                local.tee 1
+                                local.get 1
+                                i32.load8_u
+                                i32.const 1
+                                i32.add
+                                i32.store8
+                                local.get 0
+                                i32.const 1
+                                i32.shr_u
+                                global.set 0
+                            )
+                        )"#,
+        )
+        .unwrap();
+        let mut expected_module = Module::parse(&expected_wasm, false, false).unwrap();
+        wasm_equality(module.encode(), expected_module.encode());
+    }
+
+    #[test]
+    fn inject_instrumentation_function_history_2() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (memory (;0;) 1)
+                )
+            "#,
+        )
+        .unwrap();
+
+        let history_size = 2;
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (afl_prev_loc_indices, afl_mem_ptr_idx) = inject_globals(&mut module, history_size);
+        let instrumentation_function =
+            afl_instrumentation_slice(&mut module, &afl_prev_loc_indices, afl_mem_ptr_idx);
+        assert_eq!(instrumentation_function, FunctionID(0));
+        let expected_wasm = wat::parse_str(
+            r#"(module
+                            (type (;0;) (func (param i32)))
+                            (memory (;0;) 1)
+                            (global (;0;) (mut i32) i32.const 0)
+                            (global (;1;) (mut i32) i32.const 0)
+                            (global (;2;) i32 i32.const 0)
+                            (func (;0;) (type 0) (param i32)
+                                (local i32)
+                                local.get 0
+                                global.get 0
+                                i32.xor
+                                global.get 1
+                                i32.xor
+                                global.get 2
+                                i32.add
+                                local.tee 1
+                                local.get 1
+                                i32.load8_u
+                                i32.const 1
+                                i32.add
+                                i32.store8
+                                global.get 0
+                                i32.const 1
+                                i32.shr_u
+                                global.set 1
+                                local.get 0
+                                i32.const 1
+                                i32.shr_u
+                                global.set 0
+                            )
+                        )"#,
+        )
+        .unwrap();
+        let mut expected_module = Module::parse(&expected_wasm, false, false).unwrap();
+        wasm_equality(module.encode(), expected_module.encode());
+    }
+
+    #[test]
+    fn inject_afl_coverage_export_history_1() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (memory (;0;) 1)
+                )
+            "#,
+        )
+        .unwrap();
+
+        let history_size = 1;
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (_, afl_mem_ptr_idx) = inject_globals(&mut module, history_size);
+        let coverage_function =
+            inject_afl_coverage_export(&mut module, history_size, afl_mem_ptr_idx);
+        assert!(coverage_function.is_ok());
+        let expected_wasm = wat::parse_str(
+            r#"(module
+                    (type (;0;) (func (param i32 i32)))
+                    (type (;1;) (func))
+                    (import "ic0" "msg_reply_data_append" (func (;0;) (type 0)))
+                    (import "ic0" "msg_reply" (func (;1;) (type 1)))
+                    (memory (;0;) 1)
+                    (global (;0;) (mut i32) i32.const 0)
+                    (global (;1;) i32 i32.const 0)
+                    (export "canister_update __export_coverage_for_afl" (func 2))
+                    (func (;2;) (type 1)
+                        global.get 1
+                        i32.const 65536
+                        call 0
+                        call 1
+                        global.get 1
+                        i32.const 0
+                        i32.const 65536
+                        memory.fill
+                    )
+                )"#,
+        )
+        .unwrap();
+        let mut expected_module = Module::parse(&expected_wasm, false, false).unwrap();
+        wasm_equality(module.encode(), expected_module.encode());
+    }
+
+    #[test]
+    fn inject_afl_coverage_export_history_2() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (memory (;0;) 1)
+                )
+            "#,
+        )
+        .unwrap();
+
+        let history_size = 2;
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (_, afl_mem_ptr_idx) = inject_globals(&mut module, history_size);
+        let coverage_function =
+            inject_afl_coverage_export(&mut module, history_size, afl_mem_ptr_idx);
+        assert!(coverage_function.is_ok());
+        let expected_wasm = wat::parse_str(
+            r#"(module
+                    (type (;0;) (func (param i32 i32)))
+                    (type (;1;) (func))
+                    (import "ic0" "msg_reply_data_append" (func (;0;) (type 0)))
+                    (import "ic0" "msg_reply" (func (;1;) (type 1)))
+                    (memory (;0;) 1)
+                    (global (;0;) (mut i32) i32.const 0)
+                    (global (;1;) (mut i32) i32.const 0)
+                    (global (;2;) i32 i32.const 0)
+                    (export "canister_update __export_coverage_for_afl" (func 2))
+                    (func (;2;) (type 1)
+                        global.get 2
+                        i32.const 131072
+                        call 0
+                        call 1
+                        global.get 2
+                        i32.const 0
+                        i32.const 131072
+                        memory.fill
+                    )
+                )"#,
+        )
+        .unwrap();
+        let mut expected_module = Module::parse(&expected_wasm, false, false).unwrap();
+        wasm_equality(module.encode(), expected_module.encode());
+    }
+
+    /// Helper function to test branching instrumentation.
+    fn instrument_branches_helper(module: &str, expected: &[Operator]) {
+        let wat = wat::parse_str(module).unwrap();
+
+        let history_size = 2;
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (afl_prev_loc_indices, afl_mem_ptr_idx) = inject_globals(&mut module, history_size);
+        instrument_branches(
+            &mut module,
+            &afl_prev_loc_indices,
+            afl_mem_ptr_idx,
+            Seed::Static(42),
+        );
+
+        let instructions = module
+            .functions
+            .get_fn_by_id(FunctionID(0))
+            .unwrap()
+            .unwrap_local()
+            .body
+            .instructions
+            .get_ops();
+
+        assert_eq!(instructions, expected);
+    }
+
+    #[test]
+    fn inject_branch_instrumentation_func() {
+        instrument_branches_helper(
+            r#"
+                (module
+                    (type (;0;) (func))
+                    (memory (;0;) 1)
+                    (func (;0;) (type 0))
+                )
+            "#,
+            &[
+                Operator::I32Const { value: 17486 },
+                Operator::Call { function_index: 1 },
+                Operator::End,
+            ],
+        );
+    }
+
+    #[test]
+    fn inject_branch_instrumentation_block() {
+        instrument_branches_helper(
+            r#"
+                (module
+                    (memory (;0;) 1)
+                    (func
+                        block
+                        nop
+                        end
+                    )
+                )
+            "#,
+            &[
+                Operator::I32Const { value: 17486 },
+                Operator::Call { function_index: 1 },
+                Operator::Block {
+                    blockty: wirm::wasmparser::BlockType::Empty,
+                },
+                Operator::I32Const { value: 69016 },
+                Operator::Call { function_index: 1 },
+                Operator::Nop,
+                Operator::End,
+                Operator::End,
+            ],
+        );
+    }
+
+    #[test]
+    fn inject_branch_instrumentation_loop() {
+        instrument_branches_helper(
+            r#"
+                (module
+                    (memory (;0;) 1)
+                    (func
+                        loop
+                        nop
+                        end
+                    )
+                )
+            "#,
+            &[
+                Operator::I32Const { value: 17486 },
+                Operator::Call { function_index: 1 },
+                Operator::Loop {
+                    blockty: wirm::wasmparser::BlockType::Empty,
+                },
+                Operator::I32Const { value: 69016 },
+                Operator::Call { function_index: 1 },
+                Operator::Nop,
+                Operator::End,
+                Operator::End,
+            ],
+        );
+    }
+
+    #[test]
+    fn inject_branch_instrumentation_if() {
+        instrument_branches_helper(
+            r#"
+               (module
+                    (memory (;0;) 1)
+                    (func
+                        i32.const 0  ;; Condition
+                        if
+                        nop
+                        end
+                    )
+                )
+            "#,
+            &[
+                Operator::I32Const { value: 17486 },
+                Operator::Call { function_index: 1 },
+                Operator::I32Const { value: 0 },
+                Operator::If {
+                    blockty: wirm::wasmparser::BlockType::Empty,
+                },
+                Operator::I32Const { value: 69016 },
+                Operator::Call { function_index: 1 },
+                Operator::Nop,
+                Operator::End,
+                Operator::End,
+            ],
+        );
+    }
+
+    #[test]
+    fn inject_branch_instrumentation_if_else() {
+        instrument_branches_helper(
+            r#"
+               (module
+                    (memory (;0;) 1)
+                    (func
+                        i32.const 0
+                        if
+                        nop
+                        else
+                        nop
+                        end
+                    )
+                )
+            "#,
+            &[
+                Operator::I32Const { value: 17486 },
+                Operator::Call { function_index: 1 },
+                Operator::I32Const { value: 0 },
+                Operator::If {
+                    blockty: wirm::wasmparser::BlockType::Empty,
+                },
+                Operator::I32Const { value: 69016 },
+                Operator::Call { function_index: 1 },
+                Operator::Nop,
+                Operator::Else,
+                Operator::I32Const { value: 32602 },
+                Operator::Call { function_index: 1 },
+                Operator::Nop,
+                Operator::End,
+                Operator::End,
+            ],
+        );
+    }
+
+    #[test]
+    fn inject_branch_instrumentation_br() {
+        instrument_branches_helper(
+            r#"
+               (module
+                    (memory (;0;) 1)
+                    (func
+                        block
+                        br 0
+                        end
+                    )
+                )
+            "#,
+            &[
+                Operator::I32Const { value: 17486 },
+                Operator::Call { function_index: 1 },
+                Operator::Block {
+                    blockty: wirm::wasmparser::BlockType::Empty,
+                },
+                Operator::I32Const { value: 69016 },
+                Operator::Call { function_index: 1 },
+                Operator::I32Const { value: 32602 },
+                Operator::Call { function_index: 1 },
+                Operator::Br { relative_depth: 0 },
+                Operator::End,
+                Operator::End,
+            ],
+        );
+    }
+
+    #[test]
+    fn inject_branch_instrumentation_brif() {
+        instrument_branches_helper(
+            r#"
+               (module
+                    (memory (;0;) 1)
+                    (func
+                        block
+                        i32.const 0
+                        br_if 0
+                        end
+                    )
+                )
+            "#,
+            &[
+                Operator::I32Const { value: 17486 },
+                Operator::Call { function_index: 1 },
+                Operator::Block {
+                    blockty: wirm::wasmparser::BlockType::Empty,
+                },
+                Operator::I32Const { value: 69016 },
+                Operator::Call { function_index: 1 },
+                Operator::I32Const { value: 0 },
+                Operator::I32Const { value: 32602 },
+                Operator::Call { function_index: 1 },
+                Operator::BrIf { relative_depth: 0 },
+                Operator::End,
+                Operator::End,
+            ],
+        );
+    }
+
+    #[test]
+    fn inject_branch_instrumentation_return() {
+        instrument_branches_helper(
+            r#"
+               (module
+                    (memory (;0;) 1)
+                    (func
+                        return
+                    )
+                )
+            "#,
+            &[
+                Operator::I32Const { value: 17486 },
+                Operator::Call { function_index: 1 },
+                Operator::I32Const { value: 69016 },
+                Operator::Call { function_index: 1 },
+                Operator::Return,
+                Operator::End,
+            ],
+        );
+    }
+
+    #[test]
+    fn inject_branch_instrumentation_brtable() {
+        let wat = wat::parse_str(
+            r#"
+               (module
+                    (memory (;0;) 1)
+                    (func
+                        block
+                        i32.const 0
+                        br_table 0 0
+                        end
+                    )
+                )
+            "#,
+        )
+        .unwrap();
+
+        let history_size = 2;
+        let mut module = Module::parse(&wat, false, false).unwrap();
+        let (afl_prev_loc_indices, afl_mem_ptr_idx) = inject_globals(&mut module, history_size);
+        instrument_branches(
+            &mut module,
+            &afl_prev_loc_indices,
+            afl_mem_ptr_idx,
+            Seed::Static(42),
+        );
+
+        let instructions = module
+            .functions
+            .get_fn_by_id(FunctionID(0))
+            .unwrap()
+            .unwrap_local()
+            .body
+            .instructions
+            .get_ops();
+
+        let exptected = vec![
+            Operator::I32Const { value: 17486 },
+            Operator::Call { function_index: 1 },
+            Operator::Block {
+                blockty: wirm::wasmparser::BlockType::Empty,
+            },
+            Operator::I32Const { value: 69016 },
+            Operator::Call { function_index: 1 },
+            Operator::I32Const { value: 0 },
+            Operator::I32Const { value: 32602 },
+            Operator::Call { function_index: 1 },
+            // BrTable fields are private, so it can't be hardcoded.
+            Operator::End,
+            Operator::End,
+        ];
+
+        assert_eq!(
+            instructions
+                .iter()
+                .filter(|o| !matches!(o, Operator::BrTable { targets: _ }))
+                .cloned()
+                .collect::<Vec<_>>(),
+            exptected
+        );
+    }
+
+    #[should_panic]
+    #[test]
+    fn instrumentation_panic_history_size_3() {
+        let wat = wat::parse_str(
+            r#"
+                (module)
+            "#,
+        )
+        .unwrap();
+
+        let history_size: usize = 3;
+
+        let _ = instrument_wasm_for_fuzzing(InstrumentationArgs {
+            wasm_bytes: wat,
+            history_size,
+            seed: Seed::Random,
+        });
+    }
+
+    #[test]
+    fn instrumentation_round_trip() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (type (;0;) (func (param i32)))
+                    (memory (;0;) 1)
+                    (export "memory" (memory 0))
+                    (export "check_even" (func 0))
+                    (func (;0;) (type 0) (param $num i32)
+                        local.get $num
+                        i32.const 2
+                        i32.rem_u
+                        i32.eqz
+                        if ;; label = @1
+                        i32.const 0
+                        i32.const 1
+                        i32.store
+                        else
+                        i32.const 0
+                        i32.const 0
+                        i32.store
+                        end
+                    )
+                )
+            "#,
+        )
+        .unwrap();
+
+        let history_size: usize = 2;
+
+        let expected = wat::parse_str(
+            r#"
+                (module
+                    (type (;0;) (func (param i32)))
+                    (type (;1;) (func (param i32 i32)))
+                    (type (;2;) (func))
+                    (import "ic0" "msg_reply_data_append" (func (;0;) (type 1)))
+                    (import "ic0" "msg_reply" (func (;1;) (type 2)))
+                    (memory (;0;) 1)
+                    (global (;0;) (mut i32) i32.const 0)
+                    (global (;1;) (mut i32) i32.const 0)
+                    (global (;2;) i32 i32.const 0)
+                    (export "memory" (memory 0))
+                    (export "check_even" (func 2))
+                    (export "canister_update __export_coverage_for_afl" (func 3))
+                    (func (;2;) (type 0) (param i32)
+                        i32.const 17486
+                        call 4
+                        local.get 0
+                        i32.const 2
+                        i32.rem_u
+                        i32.eqz
+                        if ;; label = @1
+                        i32.const 69016
+                        call 4
+                        i32.const 0
+                        i32.const 1
+                        i32.store
+                        else
+                        i32.const 32602
+                        call 4
+                        i32.const 0
+                        i32.const 0
+                        i32.store
+                        end
+                    )
+                    (func (;3;) (type 2)
+                        i32.const 71136
+                        call 4
+                        global.get 2
+                        i32.const 131072
+                        call 0
+                        call 1
+                        global.get 2
+                        i32.const 0
+                        i32.const 131072
+                        memory.fill
+                    )
+                    (func (;4;) (type 0) (param i32)
+                        (local i32)
+                        local.get 0
+                        global.get 0
+                        i32.xor
+                        global.get 1
+                        i32.xor
+                        global.get 2
+                        i32.add
+                        local.tee 1
+                        local.get 1
+                        i32.load8_u
+                        i32.const 1
+                        i32.add
+                        i32.store8
+                        global.get 0
+                        i32.const 1
+                        i32.shr_u
+                        global.set 1
+                        local.get 0
+                        i32.const 1
+                        i32.shr_u
+                        global.set 0
+                    )
+                    )
+            "#,
+        )
+        .unwrap();
+
+        let generated = instrument_wasm_for_fuzzing(InstrumentationArgs {
+            wasm_bytes: wat,
+            history_size,
+            seed: Seed::Static(42),
+        });
+
+        wasm_equality(generated, expected);
+    }
+}
