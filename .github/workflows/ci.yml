@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Cargo cache
         uses: actions/cache@v4
@@ -34,14 +34,9 @@ jobs:
           components: clippy, rustfmt
 
       - name: Setup DFX
-        run: |
-          wget --output-document install-dfx.sh "https://internetcomputer.org/install.sh"
-          DFX_VERSION=${DFX_VERSION:=0.23.0} DFXVM_INIT_YES=true bash install-dfx.sh < <(yes Y)
-          echo "$HOME/.local/share/dfx/bin" >> $GITHUB_PATH
-          source "$HOME/.local/share/dfx/env"
-          rm install-dfx.sh
-          dfx cache install
-          echo "$HOME/bin" >> $GITHUB_PATH
+        uses: dfinity/setup-dfx@e50c04f104ee4285ec010f10609483cf41e4d365
+        with:
+          dfx-version: "${{ env.DFX_VERSION }}"
 
       - name: Setup MOPS
         uses: dfinity/setup-mops@3e94e453352269b34137b5ce49f09a8df81bed7d # v1.4.1
