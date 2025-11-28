@@ -4,8 +4,15 @@ on:
   push:
     tags: ['v*']
 
+env:
+  RUST_VERSION: 1.89.0
+
 jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+  
   publish:
+    needs: [check]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -15,11 +22,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: 1.89.0
-          target: wasm32-unknown-unknown
+          toolchain: "${{ env.RUST_VERSION }}"
+          targets: wasm32-unknown-unknown
 
       - name: Authenticate to crates.io
         uses: rust-lang/crates-io-auth-action@b7e9a28eded4986ec6b1fa40eeee8f8f165559ec # v1.0.3
