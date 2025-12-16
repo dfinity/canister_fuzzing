@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 
 use candid::{Decode, Encode, Principal};
@@ -47,6 +48,15 @@ impl FuzzerStateProvider for TrapAfterAwaitFuzzer {
 }
 
 impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
+    fn get_candid_def() -> Option<canfuzz::orchestrator::CandidTypeDefArgs> {
+        Some(canfuzz::orchestrator::CandidTypeDefArgs {
+            def: PathBuf::from_str(
+                "/home/prodsec-fuzzing/canister_fuzzing/canisters/rust/transfer/src/service.did",
+            )
+            .unwrap(),
+            method: "refund_balance".to_string(),
+        })
+    }
     fn corpus_dir(&self) -> std::path::PathBuf {
         PathBuf::from(file!())
             .parent()

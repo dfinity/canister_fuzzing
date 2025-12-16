@@ -327,16 +327,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ee88dd48c1322ae112442b804ba53097c383664921d6d3757bebfdd7821ee64"
 dependencies = [
  "anyhow",
+ "arbitrary",
  "candid",
  "codespan-reporting",
  "convert_case",
+ "fake",
  "handlebars",
  "hex",
  "lalrpop",
  "lalrpop-util",
  "logos",
  "num-bigint",
+ "num-traits",
  "pretty",
+ "rand 0.8.5",
  "serde",
  "thiserror 1.0.69",
  "toml",
@@ -349,11 +353,14 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "candid",
+ "candid_parser",
  "chrono",
  "difference",
  "ic-management-canister-types 0.5.0",
  "libafl",
  "libafl_bolts",
+ "num-bigint",
+ "num-traits",
  "once_cell",
  "pocket-ic",
  "rand 0.9.2",
@@ -623,6 +630,7 @@ dependencies = [
  "candid_parser",
  "ic-cdk",
  "ic-cdk-macros",
+ "ic-dummy-getrandom-for-wasm",
  "serde",
 ]
 
@@ -699,6 +707,12 @@ dependencies = [
  "derive_builder_core",
  "syn 2.0.111",
 ]
+
+[[package]]
+name = "deunicode"
+version = "1.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
 
 [[package]]
 name = "difference"
@@ -865,6 +879,16 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "fake"
+version = "2.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d391ba4af7f1d93f01fcf7b2f29e2bc9348e109dfdbf4dcbdc51dfa38dab0b6"
+dependencies = [
+ "deunicode",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -1350,6 +1374,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ic-dummy-getrandom-for-wasm"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e16d0dde1892f34bc07df75d68137abdecef8effb819c5b1003ee31654a81b9e"
+dependencies = [
+ "getrandom 0.2.16",
+]
+
+[[package]]
 name = "ic-error-types"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1670,6 +1703,7 @@ dependencies = [
  "candid_parser",
  "ic-cdk",
  "ic-cdk-macros",
+ "ic-dummy-getrandom-for-wasm",
  "serde",
 ]
 
@@ -3032,6 +3066,7 @@ dependencies = [
  "candid_parser",
  "ic-cdk",
  "ic-cdk-macros",
+ "ic-dummy-getrandom-for-wasm",
  "ic-stable-structures",
  "serde",
  "serde_bytes",
@@ -3529,6 +3564,7 @@ dependencies = [
  "candid_parser",
  "ic-cdk",
  "ic-cdk-macros",
+ "ic-dummy-getrandom-for-wasm",
  "serde",
 ]
 

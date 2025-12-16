@@ -19,3 +19,4 @@ ic-stable-structures = { workspace = true }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 serde_cbor = { workspace = true }
+ic-dummy-getrandom-for-wasm  = { workspace = true }
