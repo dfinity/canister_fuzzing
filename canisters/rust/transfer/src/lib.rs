@@ -70,7 +70,6 @@ fn get_total_balance() -> u64 {
 async fn refund_balance() {
     let trap: u64 = candid::decode_one(&ic_cdk::api::msg_arg_data()).unwrap_or_default();
     let caller = ic_cdk::api::msg_caller();
-
     if let Ok(_principal) = CallerGuard::new(caller) {
         let balance =
             LOCAL_BALANCES.with_borrow(|local_balance| local_balance.get(&caller).cloned());

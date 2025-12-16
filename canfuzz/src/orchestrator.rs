@@ -16,7 +16,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::custom::candid_mutator::CandidParserMutator;
+use crate::custom::candid_mutator::{CandidParserMutator, CandidTypeDefArgs};
 use crate::custom::oom_exit_kind::OomLogic;
 use crate::libafl::{
     Evaluator,
@@ -39,11 +39,6 @@ use crate::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
 use crate::constants::COVERAGE_FN_EXPORT_NAME;
 use crate::fuzzer::FuzzerState;
-
-pub struct CandidTypeDefArgs {
-    pub def: PathBuf,
-    pub method: String,
-}
 
 /// A trait for types that can provide access to the global `FuzzerState`.
 pub trait FuzzerStateProvider {
@@ -255,11 +250,11 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         }
 
         // Standard mutational stage with a havoc mutator
-        let _mutator = HavocScheduledMutator::new(havoc_mutations());
+        let mutator = HavocScheduledMutator::new(havoc_mutations());
         let mut stages = tuple_list!(
             calibration_stage,
-            StdMutationalStage::new(CandidParserMutator::new(Self::get_candid_def())),
-            //StdMutationalStage::new(mutator),
+            StdMutationalStage::transforming(CandidParserMutator::new(Self::get_candid_def())),
+            StdMutationalStage::transforming(mutator),
             stats_stage
         );
 

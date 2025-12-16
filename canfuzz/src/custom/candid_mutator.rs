@@ -1,5 +1,6 @@
 use candid::types::Type;
 use candid::{IDLArgs, IDLValue, Int, Nat, Principal, TypeEnv};
+use candid_parser::configs::{Configs, Scope, ScopePos};
 use candid_parser::typing::pretty_check_file;
 use core::marker::PhantomData;
 use libafl::inputs::HasMutatorBytes;
@@ -16,14 +17,19 @@ use num_bigint::{BigInt, BigUint};
 use num_traits::{PrimInt, WrappingAdd, WrappingSub};
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
+use std::path::PathBuf;
+use std::str::FromStr;
 
-use crate::orchestrator::CandidTypeDefArgs;
+pub struct CandidTypeDefArgs {
+    pub def: PathBuf,
+    pub method: String,
+}
 
 pub struct CandidParserMutator<S> {
     is_enabled: bool,
-    _env: TypeEnv,
-    _arg_types: Vec<Type>,
-    _method_name: Option<String>,
+    env: TypeEnv,
+    arg_types: Vec<Type>,
+    method_name: Option<String>,
     phantom: PhantomData<S>,
 }
 
@@ -32,9 +38,9 @@ impl<S> CandidParserMutator<S> {
         if candid_def.is_none() {
             return Self {
                 is_enabled: false,
-                _env: TypeEnv::new(),
-                _arg_types: vec![],
-                _method_name: None,
+                env: TypeEnv::new(),
+                arg_types: vec![],
+                method_name: None,
                 phantom: PhantomData,
             };
         }
@@ -49,11 +55,76 @@ impl<S> CandidParserMutator<S> {
 
         Self {
             is_enabled: true,
-            _env: env.clone(),
-            _arg_types: types.to_vec(),
-            _method_name: Some(candid_def.method.to_string()),
+            env: env.clone(),
+            arg_types: types.to_vec(),
+            method_name: Some(candid_def.method.to_string()),
             phantom: PhantomData,
         }
+    }
+
+    fn mutate_random_generation<I, R>(
+        &self,
+        input: &mut I,
+        rng: &mut R,
+    ) -> Result<MutationResult, Error>
+    where
+        I: Input + HasMutatorBytes + ResizableMutator<u8>,
+        R: Rng,
+    {
+        let config = Configs::from_str("").unwrap();
+
+        let scope = self.method_name.as_ref().map(|method| Scope {
+            position: Some(ScopePos::Arg),
+            method,
+        });
+
+        let seed = rng.random::<u64>().to_le_bytes().to_vec();
+
+        let new_args =
+            match candid_parser::random::any(&seed, config, &self.env, &self.arg_types, &scope) {
+                Ok(args) => args,
+                Err(_) => return Ok(MutationResult::Skipped), // Schema mismatch or gen failure
+            };
+
+        let new_bytes = match new_args.to_bytes() {
+            Ok(b) => b,
+            Err(_) => return Ok(MutationResult::Skipped),
+        };
+
+        input.resize(0, 0);
+        input.extend(&new_bytes);
+        Ok(MutationResult::Mutated)
+    }
+
+    fn mutate_existing_bytes<I, R>(
+        &self,
+        input: &mut I,
+        rng: &mut R,
+    ) -> Result<MutationResult, Error>
+    where
+        I: Input + HasMutatorBytes + ResizableMutator<u8>,
+        R: Rng,
+    {
+        let mut args = match IDLArgs::from_bytes(input.mutator_bytes()) {
+            Ok(a) => a,
+            Err(_) => return Ok(MutationResult::Skipped),
+        };
+
+        if !args.args.is_empty() {
+            let index = rng.random_range(0..args.args.len());
+            if let Some(val) = args.args.get_mut(index) {
+                mutate_value(val, rng, 0);
+            }
+        }
+
+        let new_bytes = match args.to_bytes() {
+            Ok(bytes) => bytes,
+            Err(_) => return Ok(MutationResult::Skipped),
+        };
+
+        input.resize(0, 0);
+        input.extend(&new_bytes);
+        Ok(MutationResult::Mutated)
     }
 }
 
@@ -69,35 +140,24 @@ where
     I: Input + HasMutatorBytes + ResizableMutator<u8>,
 {
     fn mutate(&mut self, state: &mut S, input: &mut I) -> Result<MutationResult, Error> {
-        if self.is_enabled == false {
-            return Ok(MutationResult::Skipped);
-        }
-
-        let mut args = match IDLArgs::from_bytes(input.mutator_bytes()) {
-            Ok(a) => a,
-            Err(_) => return Ok(MutationResult::Skipped),
-        };
-
         let state_u64 = state.rand_mut().next();
-        let mut rng = rand::rngs::StdRng::seed_from_u64(state_u64 as u64);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(state_u64);
 
-        if !args.args.is_empty() {
-            let index = rng.random_range(0..args.args.len());
-            if let Some(val) = args.args.get_mut(index) {
-                mutate_value(val, &mut rng, 0);
+        // No mutation
+        if !self.is_enabled {
+            if rng.random_bool(0.05) {
+                return self.mutate_random_generation(input, &mut rng);
+            } else {
+                return Ok(MutationResult::Skipped);
             }
-        } else {
-            return Ok(MutationResult::Mutated);
         }
 
-        let new_bytes = match args.to_bytes() {
-            Ok(bytes) => bytes,
-            Err(_) => return Ok(MutationResult::Skipped),
-        };
+        // Enabled 20% random + 80% existing
+        if rng.random_bool(0.2) {
+            return self.mutate_random_generation(input, &mut rng);
+        }
 
-        input.resize(0, 0);
-        input.extend(&new_bytes);
-        Ok(MutationResult::Mutated)
+        self.mutate_existing_bytes(input, &mut rng)
     }
 
     fn post_exec(
@@ -105,6 +165,9 @@ where
         _state: &mut S,
         _new_corpus_id: Option<libafl::corpus::CorpusId>,
     ) -> Result<(), Error> {
+        if let Some(id) = _new_corpus_id {
+            println!("New corpus id {id:?}");
+        }
         Ok(())
     }
 }
