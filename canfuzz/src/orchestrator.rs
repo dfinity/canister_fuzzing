@@ -154,7 +154,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         unsafe { crate::instrumentation::COVERAGE_MAP }
     }
 
-    fn get_candid_def() -> Option<CandidTypeDefArgs> {
+    fn get_candid_args() -> Option<CandidTypeDefArgs> {
         None
     }
 
@@ -253,7 +253,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         let mutator = HavocScheduledMutator::new(havoc_mutations());
         let mut stages = tuple_list!(
             calibration_stage,
-            StdMutationalStage::transforming(CandidParserMutator::new(Self::get_candid_def())),
+            StdMutationalStage::transforming(CandidParserMutator::new(Self::get_candid_args())),
             StdMutationalStage::transforming(mutator),
             stats_stage
         );

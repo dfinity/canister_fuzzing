@@ -23,7 +23,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 pub struct CandidTypeDefArgs {
-    pub def: PathBuf,
+    pub definition: PathBuf,
     pub method: String,
 }
 
@@ -36,8 +36,8 @@ pub struct CandidParserMutator<S> {
 }
 
 impl<S> CandidParserMutator<S> {
-    pub fn new(candid_def: Option<CandidTypeDefArgs>) -> Self {
-        if candid_def.is_none() {
+    pub fn new(candid_args: Option<CandidTypeDefArgs>) -> Self {
+        if candid_args.is_none() {
             return Self {
                 is_enabled: false,
                 env: TypeEnv::new(),
@@ -46,17 +46,18 @@ impl<S> CandidParserMutator<S> {
                 phantom: PhantomData,
             };
         }
-        let candid_def = candid_def.unwrap();
-        let (env, actor, _) = pretty_check_file(&candid_def.def).expect("Unable to parse did file");
+        let candid_args = candid_args.unwrap();
+        let (env, actor, _) =
+            pretty_check_file(&candid_args.definition).expect("Unable to parse did file");
         let actor = actor.unwrap();
-        let func = env.get_method(&actor, &candid_def.method).unwrap();
+        let func = env.get_method(&actor, &candid_args.method).unwrap();
         let types = &func.args;
 
         Self {
             is_enabled: true,
             env: env.clone(),
             arg_types: types.to_vec(),
-            method_name: Some(candid_def.method.to_string()),
+            method_name: Some(candid_args.method.to_string()),
             phantom: PhantomData,
         }
     }
