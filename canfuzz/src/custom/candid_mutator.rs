@@ -1,4 +1,4 @@
-use candid::types::Type;
+use candid::types::{Type, TypeInner};
 use candid::{IDLArgs, IDLValue, Int, Nat, Principal, TypeEnv};
 use candid_parser::configs::{Configs, Scope, ScopePos};
 use candid_parser::typing::pretty_check_file;
@@ -14,10 +14,12 @@ use libafl::{
 use libafl_bolts::Named;
 use libafl_bolts::rands::Rand;
 use num_bigint::{BigInt, BigUint};
-use num_traits::{PrimInt, WrappingAdd, WrappingSub};
+use num_traits::{PrimInt, WrappingAdd, WrappingMul, WrappingSub};
+use rand::distr::{Distribution, StandardUniform};
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::str::FromStr;
 
 pub struct CandidTypeDefArgs {
@@ -106,15 +108,38 @@ impl<S> CandidParserMutator<S> {
         R: Rng,
     {
         let mut args = match IDLArgs::from_bytes(input.mutator_bytes()) {
-            Ok(a) => a,
+            Ok(a) => {
+                // This is a bit of a hack. We are trying to see if the decoded args are compatible
+                // with the method signature. If not, we can't do type-aware mutation.
+                // A better approach would be to store the types alongside the args in the corpus.
+                let mut gamma = std::collections::HashSet::new();
+                let decoded_types = a.get_types();
+                if self.arg_types.len() == decoded_types.len()
+                    && self
+                        .arg_types
+                        .iter()
+                        .zip(decoded_types.iter())
+                        .all(|(t1, t2)| {
+                            candid::types::subtype::subtype(&mut gamma, &self.env, t2, t1).is_ok()
+                        })
+                {
+                    a
+                } else {
+                    return Ok(MutationResult::Skipped);
+                }
+            }
             Err(_) => return Ok(MutationResult::Skipped),
         };
 
         if !args.args.is_empty() {
             let index = rng.random_range(0..args.args.len());
-            if let Some(val) = args.args.get_mut(index) {
-                mutate_value(val, rng, 0);
-            }
+            mutate_value(
+                &mut args.args[index],
+                &self.arg_types[index],
+                &self.env,
+                rng,
+                0,
+            );
         }
 
         let new_bytes = match args.to_bytes() {
@@ -154,6 +179,8 @@ where
 
         // Enabled 20% random + 80% existing
         if rng.random_bool(0.2) {
+            // We offload it to candid_parser::random for now, but later can replace
+            // with our own strategy
             return self.mutate_random_generation(input, &mut rng);
         }
 
@@ -172,7 +199,7 @@ where
     }
 }
 
-fn mutate_value<R: Rng>(val: &mut IDLValue, rng: &mut R, depth: usize) {
+fn mutate_value<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut R, depth: usize) {
     if depth > 20 {
         return;
     }
@@ -180,54 +207,112 @@ fn mutate_value<R: Rng>(val: &mut IDLValue, rng: &mut R, depth: usize) {
     match val {
         IDLValue::Bool(b) => *b = !*b,
         IDLValue::Null => {}
+        IDLValue::None => {}
+        IDLValue::Reserved => {}
+
         IDLValue::Text(s) => mutate_text(s, rng),
+        IDLValue::Number(s) => mutate_text(s, rng),
+
         IDLValue::Int(i) => mutate_int(i, rng),
-        IDLValue::Nat(n) => mutate_nat(n, rng),
-        IDLValue::Float32(f) => *f = mutate_float(*f, rng),
-        IDLValue::Float64(f) => *f = mutate_float(*f, rng),
-        IDLValue::Vec(v) => mutate_vec(v, rng, depth),
-        IDLValue::Opt(_o) => todo!(),
         IDLValue::Int8(i) => *i = mutate_primitive(*i, rng),
         IDLValue::Int16(i) => *i = mutate_primitive(*i, rng),
         IDLValue::Int32(i) => *i = mutate_primitive(*i, rng),
         IDLValue::Int64(i) => *i = mutate_primitive(*i, rng),
+
+        IDLValue::Nat(n) => mutate_nat(n, rng),
         IDLValue::Nat8(n) => *n = mutate_primitive(*n, rng),
         IDLValue::Nat16(n) => *n = mutate_primitive(*n, rng),
         IDLValue::Nat32(n) => *n = mutate_primitive(*n, rng),
         IDLValue::Nat64(n) => *n = mutate_primitive(*n, rng),
+
+        IDLValue::Float32(f) => *f = mutate_float(*f, rng),
+        IDLValue::Float64(f) => *f = mutate_float(*f, rng),
+
+        IDLValue::Vec(v) => {
+            if let Ok(TypeInner::Vec(item_ty)) = env.trace_type(ty).map(|t| t.as_ref().clone()) {
+                mutate_vec(v, &item_ty, env, rng, depth);
+            }
+        }
+        IDLValue::Principal(p) => mutate_principal(p, rng),
+        IDLValue::Blob(items) => mutate_blob(items, rng),
+
         IDLValue::Record(fields) => {
-            if !fields.is_empty() {
-                let idx = rng.random_range(0..fields.len());
-                mutate_value(&mut fields[idx].val, rng, depth + 1);
+            if let Ok(TypeInner::Record(field_types)) =
+                env.trace_type(ty).map(|t| t.as_ref().clone())
+            {
+                if !fields.is_empty() {
+                    let idx = rng.random_range(0..fields.len());
+                    if let Some(field_ty) = field_types
+                        .iter()
+                        .find(|f| f.id == Rc::new(fields[idx].id.clone()))
+                    {
+                        mutate_value(&mut fields[idx].val, &field_ty.ty, env, rng, depth + 1);
+                    }
+                }
             }
         }
         IDLValue::Variant(v) => {
-            mutate_value(&mut v.0.val, rng, depth + 1);
+            if let Ok(TypeInner::Variant(variant_fields)) =
+                env.trace_type(ty).map(|t| t.as_ref().clone())
+            {
+                if !variant_fields.is_empty() && rng.random_bool(0.2) {
+                    // Switch to a different variant
+                    let new_variant_idx = rng.random_range(0..variant_fields.len());
+                    let new_field_type = &variant_fields[new_variant_idx];
+                    let mut new_val = IDLValue::Null; // Placeholder
+                    // Generate a new random value for the new variant
+                    let seed = rng.random::<u64>().to_le_bytes().to_vec();
+                    if let Ok(random_val) = candid_parser::random::any(
+                        &seed,
+                        Configs::from_str("").unwrap(),
+                        env,
+                        &[new_field_type.ty.clone()],
+                        &None,
+                    ) {
+                        if !random_val.args.is_empty() {
+                            new_val = random_val.args[0].clone();
+                        }
+                    }
+                    v.0.id = Rc::into_inner(new_field_type.id.clone()).unwrap();
+                    v.0.val = new_val;
+                    v.1 = new_variant_idx as u64;
+                } else {
+                    // Mutate the value of the current variant
+                    if let Some(field_ty) = variant_fields
+                        .iter()
+                        .find(|f| f.id == Rc::new(v.0.id.clone()))
+                    {
+                        mutate_value(&mut v.0.val, &field_ty.ty, env, rng, depth + 1);
+                    }
+                }
+            }
         }
-        IDLValue::Principal(p) => mutate_principal(p, rng),
-        IDLValue::Number(_) => todo!(),
-        IDLValue::Blob(_items) => todo!(),
-        IDLValue::Service(_principal) => todo!(),
-        IDLValue::Func(_principal, _) => todo!(),
-        IDLValue::None => todo!(),
-        IDLValue::Reserved => todo!(),
+
+        IDLValue::Opt(o) => mutate_opt(o, ty, env, rng, depth),
+        IDLValue::Service(_principal) => {
+            unimplemented!("Mutating service defintion is umimplemented!")
+        }
+        IDLValue::Func(_principal, _) => {
+            unimplemented!("Mutating func defintion is umimplemented!")
+        }
     }
 }
 
 fn mutate_text<R: Rng>(s: &mut String, rng: &mut R) {
-    match rng.random_range(0..4) {
-        0 => s.push_str("FUZZ"), // Append
-        1 => {
+    match rng.random_range(0..10) {
+        0..5 => {
+            let idx = rng.random_range(0..s.len());
+            let naughty_index = rng.random_range(0..naughty_strings::BLNS.len());
+            s.insert_str(idx, naughty_strings::BLNS[naughty_index]);
+        }
+        5 => {
             if !s.is_empty() {
                 s.pop();
             }
-        } // Truncate
-        2 => *s = String::from(""), // Empty
-        3 => {
-            // Bit flip a random char
+        }
+        6 => *s = String::from(""),
+        7..9 => {
             if !s.is_empty() {
-                // This is a naive byte flip, might produce invalid utf8, which Candid handles safely
-                // generally you want to insert known "naughty strings" here.
                 unsafe {
                     let v = s.as_mut_vec();
                     let idx = rng.random_range(0..v.len());
@@ -240,13 +325,22 @@ fn mutate_text<R: Rng>(s: &mut String, rng: &mut R) {
 }
 
 fn mutate_int<R: Rng>(i: &mut Int, rng: &mut R) {
-    // Candid Int is a wrapper around BigInt
     let val = &i.0;
-    let new_val = match rng.random_range(0..4) {
+    let new_val = match rng.random_range(0..20) {
         0 => val + 1,
         1 => val - 1,
         2 => BigInt::from(0),
-        3 => BigInt::from(i64::MIN), // Boundary values
+        3 => BigInt::from(i64::MIN),
+        4 => BigInt::from(i64::MAX),
+        5..20 => {
+            let random = BigInt::from(rng.random::<i128>());
+            match rng.random_range(0..3) {
+                0 => random + val,
+                1 => random - val,
+                2 => random * val,
+                _ => val.clone(),
+            }
+        }
         _ => val.clone(),
     };
     *i = Int(new_val);
@@ -254,7 +348,7 @@ fn mutate_int<R: Rng>(i: &mut Int, rng: &mut R) {
 
 fn mutate_nat<R: Rng>(n: &mut Nat, rng: &mut R) {
     let val = &n.0;
-    let new_val = match rng.random_range(0..4) {
+    let new_val = match rng.random_range(0..20) {
         0 => val + 1u32,
         1 => {
             if val > &BigUint::from(0u32) {
@@ -265,142 +359,302 @@ fn mutate_nat<R: Rng>(n: &mut Nat, rng: &mut R) {
         }
         2 => BigUint::from(u64::MAX),
         3 => BigUint::from(0u32),
+        4..20 => {
+            let random = BigUint::from(rng.random::<u128>());
+            match rng.random_range(0..3) {
+                0 => random + val,
+                1 => random - val,
+                2 => random * val,
+                _ => val.clone(),
+            }
+        }
         _ => val.clone(),
     };
     *n = Nat(new_val);
 }
 
-fn mutate_float<F: num_traits::Float + Copy, R: Rng>(f: F, rng: &mut R) -> F {
-    if rng.random_bool(0.1) {
+fn mutate_float<F, R: Rng>(f: F, rng: &mut R) -> F
+where
+    F: num_traits::Float + Copy,
+    StandardUniform: Distribution<F>,
+{
+    let random = rng.random::<F>();
+
+    if rng.random_bool(0.05) {
         return F::nan();
     }
-    if rng.random_bool(0.1) {
+    if rng.random_bool(0.05) {
         return F::infinity();
     }
-    f + F::from(1.0).unwrap() // Simple increment
+
+    match rng.random_range(0..3) {
+        0 => random + f,
+        1 => random - f,
+        2 => random * f,
+        _ => f,
+    }
 }
 
-fn mutate_vec<R: Rng>(vec: &mut Vec<IDLValue>, rng: &mut R, depth: usize) {
+fn mutate_vec<R: Rng>(
+    vec: &mut Vec<IDLValue>,
+    item_ty: &Type,
+    env: &TypeEnv,
+    rng: &mut R,
+    depth: usize,
+) {
     if vec.is_empty() {
-        // If empty, we can't easily add an item because generic IDLValue::Vec
-        // doesn't inherently know what inner type to manufacture without looking at schema.
-        // We could duplicate logic if we had the schema, but generic fuzzing usually assumes
-        // non-empty corpus.
         return;
     }
 
     match rng.random_range(0..3) {
         0 => {
-            // Remove random element
             let idx = rng.random_range(0..vec.len());
             vec.remove(idx);
         }
         1 => {
-            // Duplicate random element (easy way to add valid data)
-            let idx = rng.random_range(0..vec.len());
+            let length = vec.len();
+            let idx = rng.random_range(0..length);
             let val = vec[idx].clone();
             vec.push(val);
+            mutate_value(&mut vec[length], item_ty, env, rng, depth + 1);
         }
         2 => {
-            // Mutate an element inside
             let idx = rng.random_range(0..vec.len());
-            mutate_value(&mut vec[idx], rng, depth + 1);
+            mutate_value(&mut vec[idx], item_ty, env, rng, depth + 1);
         }
         _ => {}
     }
 }
 
 fn mutate_principal<R: Rng>(p: &mut Principal, rng: &mut R) {
-    // Management canister or anonymous
-    if rng.random_bool(0.5) {
-        *p = Principal::management_canister();
-    } else {
-        *p = Principal::anonymous();
+    *p = match rng.random::<u8>() {
+        u8::MAX => Principal::management_canister(),
+        254u8 => Principal::anonymous(),
+        _ => {
+            let length: usize = rng.random_range(1..=Principal::MAX_LENGTH_IN_BYTES);
+            let mut result: Vec<u8> = Vec::with_capacity(length);
+            for _ in 0..length {
+                result.push(rng.random::<u8>());
+            }
+            let last = result.last_mut().unwrap();
+            // Anonymous tag
+            if *last == 4 {
+                *last = u8::MAX
+            }
+            Principal::try_from(&result[..]).unwrap()
+        }
     }
 }
 
-// A highly aggressive primitive mutator favoring bit-level manipulation.
-/// Works for any type T that behaves like a primitive integer (u8..u64, i8..i64).
+fn mutate_blob<R: Rng>(b: &mut Vec<u8>, rng: &mut R) {
+    let new_size = rng.random_range(0..b.len());
+    b.resize(new_size, 0);
+    rng.fill_bytes(b);
+}
+
 fn mutate_primitive<T, R>(val: T, rng: &mut R) -> T
 where
-    T: PrimInt + std::fmt::Debug + WrappingAdd + WrappingSub, // PrimInt gives us bitwise ops (>>, <<, ^, |, &)
+    T: PrimInt + WrappingAdd + WrappingSub + WrappingMul,
+    StandardUniform: Distribution<T>,
     R: Rng,
 {
-    // We want bit flips to be "prominent", so we give them high probability.
-    // 0-40:  Single Bit Flip
-    // 41-60: Two Bit Flip
-    // 61-75: Byte Flip (Mask 0xFF)
-    // 76-85: Arithmetic (+/- 1)
-    // 86-95: Boundary (MIN/MAX/0)
-    // 96-99: Havoc (Random)
+    let random = rng.random::<T>();
 
-    let mutation_type = rng.random_range(0..100);
-    let bit_width = std::mem::size_of::<T>() * 8;
+    match rng.random_range(0..4) {
+        0 => random.wrapping_add(&val),
+        1 => random.wrapping_sub(&val),
+        2 => random.wrapping_mul(&val),
+        3 => random ^ val,
+        _ => val,
+    }
+}
 
-    match mutation_type {
-        // --- Single Bit Flip (High Priority) ---
-        0..=40 => {
-            let bit_idx = rng.random_range(0..bit_width);
-            // 1 << bit_idx
-            let mask = T::one() << bit_idx;
-            val ^ mask
+fn mutate_opt<R: Rng>(o: &mut Box<IDLValue>, ty: &Type, env: &TypeEnv, rng: &mut R, depth: usize) {
+    if let Ok(TypeInner::Opt(inner_ty)) = env.trace_type(ty).map(|t| t.as_ref().clone()) {
+        mutate_value(o, &inner_ty, env, rng, depth);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use candid::types::value::VariantValue;
+    use candid::types::{Field, Label};
+    use rand::SeedableRng;
+    use std::rc::Rc;
+
+    const STATIC_SEED: u64 = 7355608;
+
+    #[test]
+    fn test_mutate_text() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+        let mut s = "hello".to_string();
+        mutate_text(&mut s, &mut rng);
+        assert_eq!(
+            s,
+            "h\"`'><script>\\xE3\\x80\\x80javascript:alert(1)</script>ello"
+        );
+    }
+
+    #[test]
+    fn test_mutate_int() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+        let mut i = Int(BigInt::from(100));
+        mutate_int(&mut i, &mut rng);
+        assert_eq!(i, Int(BigInt::from(0)));
+    }
+
+    #[test]
+    fn test_mutate_nat() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+        let mut n = Nat(BigUint::from(100u32));
+        mutate_nat(&mut n, &mut rng);
+        assert_eq!(n, Nat(BigUint::from(18446744073709551615u64)));
+    }
+
+    #[test]
+    fn test_mutate_float() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+        let f: f64 = 123.456;
+        let mutated_f = mutate_float(f, &mut rng);
+        assert_eq!(mutated_f, f64::INFINITY);
+    }
+
+    #[test]
+    fn test_mutate_primitive() {
+        macro_rules! test_primitive {
+            ($ty:ty, $val:expr, $expected:expr) => {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+                let val: $ty = $val;
+                let mutated = mutate_primitive(val, &mut rng);
+                assert_eq!(mutated, $expected, "failed for type {}", stringify!($ty));
+            };
         }
 
-        // --- Two Bit Flips ---
-        41..=60 => {
-            let bit1 = rng.random_range(0..bit_width);
-            let bit2 = rng.random_range(0..bit_width);
-            let mask1 = T::one() << bit1;
-            let mask2 = T::one() << bit2;
-            val ^ (mask1 | mask2)
-        }
+        test_primitive!(i8, 10, 36);
+        test_primitive!(i16, 10, -26844);
+        test_primitive!(i32, 10, 541693732);
+        test_primitive!(i64, 10, -1227287045443950644_i64);
+        test_primitive!(u8, 10, 36);
+        test_primitive!(u16, 10, 38692);
+        test_primitive!(u32, 10, 541693732_u32);
+        test_primitive!(u64, 10, 17219457028265600972u64);
+    }
 
-        // --- Byte Flip (XOR with 0xFF at random position) ---
-        61..=75 => {
-            if bit_width <= 8 {
-                // For u8/i8, this is just a full inversion
-                !val
-            } else {
-                // Select a byte alignment (0, 8, 16, 32...)
-                let shift = rng.random_range(0..(std::mem::size_of::<T>())) * 8;
-                // Create mask 0xFF cast to T
-                let byte_mask = T::from(0xFFu8).unwrap();
-                let mask = byte_mask << shift;
-                val ^ mask
-            }
-        }
+    #[test]
+    fn test_mutate_principal() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+        let mut p = Principal::anonymous();
+        mutate_principal(&mut p, &mut rng);
+        // Generates a new random principal
+        let expected =
+            Principal::try_from(&[197, 8, 228, 253, 44, 55, 230, 45, 210, 76, 14, 52][..]).unwrap();
+        assert_eq!(p, expected);
+    }
 
-        // --- Arithmetic (Standard Fuzzing) ---
-        76..=85 => {
-            if rng.random_bool(0.5) {
-                val.wrapping_add(&T::one())
-            } else {
-                val.wrapping_sub(&T::one())
-            }
-        }
+    #[test]
+    fn test_mutate_blob() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+        let mut b = vec![1, 2, 3, 4, 5];
+        mutate_blob(&mut b, &mut rng);
+        assert_eq!(b, Vec::<u8>::new());
+    }
 
-        // --- Boundaries (Edge Cases) ---
-        86..=95 => match rng.random_range(0..3) {
-            0 => T::min_value(),
-            1 => T::max_value(),
-            _ => T::zero(),
-        },
+    #[test]
+    fn test_mutate_vec() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+        let mut v = vec![IDLValue::Nat8(10), IDLValue::Nat8(20)];
+        let item_ty = TypeInner::Nat8.into();
+        let env = TypeEnv::new();
+        mutate_vec(&mut v, &item_ty, &env, &mut rng, 0);
+        assert_eq!(v, vec![IDLValue::Nat8(20)]);
+    }
 
-        // --- Havoc (Complete random replacement) ---
-        _ => {
-            // Generates a random u64, casts it to T.
-            // Since T might be small (u8), we let the cast truncate naturally.
-            // Note: FromPrimitive returns Option, but usually simple casting via `as` is hard in generics.
-            // We can cheat by creating random bytes and reading them.
-            // Or simpler: XOR with a random mask of full width.
+    #[test]
+    fn test_mutate_opt() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+        let mut opt_val = Box::new(IDLValue::Nat8(10));
+        let ty = TypeInner::Opt(TypeInner::Nat8.into()).into();
+        let env = TypeEnv::new();
+        mutate_opt(&mut opt_val, &ty, &env, &mut rng, 0);
+        // Mutates the inner value
+        assert_eq!(*opt_val, IDLValue::Nat8(36));
+    }
 
-            // Create a random mask from u128 to cover all sizes up to u64/i64 easily
-            let rand_bits = rng.random::<u128>();
-            let mask = T::from(rand_bits & 0xFFFFFFFFFFFFFFFF).unwrap_or_else(|| T::zero());
-            // In case T::from fails (it shouldn't for primitives), we fallback to bit flip.
+    #[test]
+    fn test_mutate_record() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+        let mut val = IDLValue::Record(vec![
+            candid::types::value::IDLField {
+                id: Label::Named("a".to_string()),
+                val: IDLValue::Nat8(10),
+            },
+            candid::types::value::IDLField {
+                id: Label::Named("b".to_string()),
+                val: IDLValue::Bool(true),
+            },
+        ]);
+        let ty: Type = TypeInner::Record(vec![
+            Field {
+                id: Rc::new(Label::Named("a".to_string())),
+                ty: TypeInner::Nat8.into(),
+            },
+            Field {
+                id: Rc::new(Label::Named("b".to_string())),
+                ty: TypeInner::Bool.into(),
+            },
+        ])
+        .into();
+        let env = TypeEnv::new();
 
-            // Actually, simply XORing the current value with random bits = random value
-            val ^ mask
-        }
+        mutate_value(&mut val, &ty, &env, &mut rng, 0);
+
+        // Mutates the first field
+        let expected = IDLValue::Record(vec![
+            candid::types::value::IDLField {
+                id: Label::Named("a".to_string()),
+                val: IDLValue::Nat8(238),
+            },
+            candid::types::value::IDLField {
+                id: Label::Named("b".to_string()),
+                val: IDLValue::Bool(true),
+            },
+        ]);
+        assert_eq!(val, expected);
+    }
+
+    #[test]
+    fn test_mutate_variant_value() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
+        let mut val = IDLValue::Variant(VariantValue(
+            Box::new(candid::types::value::IDLField {
+                id: Label::Named("A".to_string()),
+                val: IDLValue::Nat8(10),
+            }),
+            0,
+        ));
+        let ty: Type = TypeInner::Variant(vec![
+            Field {
+                id: Rc::new(Label::Named("A".to_string())),
+                ty: TypeInner::Nat8.into(),
+            },
+            Field {
+                id: Rc::new(Label::Named("B".to_string())),
+                ty: TypeInner::Bool.into(),
+            },
+        ])
+        .into();
+        let env = TypeEnv::new();
+
+        mutate_value(&mut val, &ty, &env, &mut rng, 0);
+
+        let expected = IDLValue::Variant(VariantValue(
+            Box::new(candid::types::value::IDLField {
+                id: Label::Named("A".to_string()),
+                val: IDLValue::Nat8(207),
+            }),
+            0,
+        ));
+        assert_eq!(val, expected);
     }
 }

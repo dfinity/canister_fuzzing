@@ -1,3 +1,16 @@
+type StableStructOperation = variant {
+  BTreeMapInsert : record { key : blob; value : blob };
+  BTreeMapRemove : record { index : nat16 };
+  BTreeMapPopFirst : null;
+  BTreeMapPopLast : null;
+  MinHeapPush : record { value : blob };
+  MinHeapPop : null;
+  VecPush : record { value : blob };
+  VecPop : null;
+};
+
+type OperationList = vec StableStructOperation;
+
 service : {
-  stable_memory_ops : (blob) -> ();
+  stable_memory_ops : (OperationList) -> ();
 }

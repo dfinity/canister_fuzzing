@@ -356,9 +356,10 @@ dependencies = [
  "candid_parser",
  "chrono",
  "difference",
- "ic-management-canister-types 0.5.0",
+ "ic-management-canister-types",
  "libafl",
  "libafl_bolts",
+ "naughty-strings",
  "num-bigint",
  "num-traits",
  "once_cell",
@@ -1328,7 +1329,7 @@ dependencies = [
  "ic-cdk-executor",
  "ic-cdk-macros",
  "ic-error-types",
- "ic-management-canister-types 0.5.0",
+ "ic-management-canister-types",
  "ic0",
  "pin-project-lite",
  "serde",
@@ -1391,17 +1392,6 @@ dependencies = [
  "serde",
  "strum",
  "strum_macros",
-]
-
-[[package]]
-name = "ic-management-canister-types"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea7e5b8a0f7c3b320d9450ac950547db4f24a31601b5d398f9680b64427455d2"
-dependencies = [
- "candid",
- "serde",
- "serde_bytes",
 ]
 
 [[package]]
@@ -1987,6 +1977,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "naughty-strings"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77f60b021f91344453a569296aced9b149bdf75ac182cfc4631f6b55a5aa590f"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2242,9 +2241,9 @@ dependencies = [
 
 [[package]]
 name = "pocket-ic"
-version = "10.0.0"
+version = "11.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c9b78f339182efb981ceca2ac360aa280609f8d8c785e5a7eeda488f53497a8"
+checksum = "67394a1de5e9bd67e92eef90c9034fbd28f26cfcb64854f187f3979191d6380c"
 dependencies = [
  "backoff",
  "base64 0.13.1",
@@ -2252,10 +2251,11 @@ dependencies = [
  "flate2",
  "hex",
  "ic-certification",
- "ic-management-canister-types 0.3.3",
+ "ic-management-canister-types",
  "ic-transport-types",
  "reqwest",
  "schemars",
+ "semver",
  "serde",
  "serde_bytes",
  "serde_cbor",
@@ -2810,6 +2810,10 @@ name = "semver"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
+dependencies = [
+ "serde",
+ "serde_core",
+]
 
 [[package]]
 name = "serde"

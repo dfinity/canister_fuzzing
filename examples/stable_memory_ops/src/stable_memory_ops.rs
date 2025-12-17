@@ -1,9 +1,11 @@
 use candid::Principal;
+use canfuzz::custom::candid_mutator::CandidTypeDefArgs;
 use canfuzz::libafl::executors::ExitKind;
 use canfuzz::libafl::inputs::ValueInput;
 use once_cell::sync::OnceCell;
 use pocket_ic::PocketIcBuilder;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 
 use slog::Level;
@@ -38,6 +40,16 @@ impl FuzzerStateProvider for StableMemoryFuzzer {
 }
 
 impl FuzzerOrchestrator for StableMemoryFuzzer {
+    fn get_candid_def() -> Option<CandidTypeDefArgs> {
+        Some(CandidTypeDefArgs {
+            def: PathBuf::from_str(
+                "/home/prodsec-fuzzing/canister_fuzzing/canisters/rust/stable_memory/src/service.did",
+            )
+            .unwrap(),
+            method: "stable_memory_ops".to_string(),
+        })
+    }
+
     fn corpus_dir(&self) -> std::path::PathBuf {
         PathBuf::from(file!())
             .parent()

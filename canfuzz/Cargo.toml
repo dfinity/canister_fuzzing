@@ -29,6 +29,7 @@ slog = { workspace = true }
 wirm = { workspace = true }
 num-traits = { workspace = true }
 num-bigint = { workspace = true }
+naughty-strings = { workspace =  true }
 
 [dev-dependencies]
 wat = { workspace = true }
