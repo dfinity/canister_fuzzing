@@ -46,9 +46,6 @@ impl<S> CandidParserMutator<S> {
                 phantom: PhantomData,
             };
         }
-        // Initially, we will depend on corpus to develop and modify the type values
-        // But we need the method defs to test subtype relations
-
         let candid_def = candid_def.unwrap();
         let (env, actor, _) = pretty_check_file(&candid_def.def).expect("Unable to parse did file");
         let actor = actor.unwrap();
@@ -108,12 +105,10 @@ impl<S> CandidParserMutator<S> {
         R: Rng,
     {
         let mut args = match IDLArgs::from_bytes(input.mutator_bytes()) {
-            Ok(a) => {
-                // This is a bit of a hack. We are trying to see if the decoded args are compatible
-                // with the method signature. If not, we can't do type-aware mutation.
-                // A better approach would be to store the types alongside the args in the corpus.
+            Ok(args) => {
+                // Subtyping check
                 let mut gamma = std::collections::HashSet::new();
-                let decoded_types = a.get_types();
+                let decoded_types = args.get_types();
                 if self.arg_types.len() == decoded_types.len()
                     && self
                         .arg_types
@@ -123,7 +118,7 @@ impl<S> CandidParserMutator<S> {
                             candid::types::subtype::subtype(&mut gamma, &self.env, t2, t1).is_ok()
                         })
                 {
-                    a
+                    args
                 } else {
                     return Ok(MutationResult::Skipped);
                 }
@@ -170,17 +165,13 @@ where
 
         // No mutation
         if !self.is_enabled {
-            if rng.random_bool(0.05) {
-                return self.mutate_random_generation(input, &mut rng);
-            } else {
-                return Ok(MutationResult::Skipped);
-            }
+            return Ok(MutationResult::Skipped);
         }
 
         // Enabled 20% random + 80% existing
         if rng.random_bool(0.2) {
-            // We offload it to candid_parser::random for now, but later can replace
-            // with our own strategy
+            // We offload it to candid_parser::random for now,
+            // but later can replace with our own strategy
             return self.mutate_random_generation(input, &mut rng);
         }
 
@@ -241,12 +232,27 @@ fn mutate_value<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut 
                 env.trace_type(ty).map(|t| t.as_ref().clone())
             {
                 if !fields.is_empty() {
-                    let idx = rng.random_range(0..fields.len());
-                    if let Some(field_ty) = field_types
-                        .iter()
-                        .find(|f| f.id == Rc::new(fields[idx].id.clone()))
-                    {
-                        mutate_value(&mut fields[idx].val, &field_ty.ty, env, rng, depth + 1);
+                    let num_to_mutate = rng.random_range(1..=fields.len());
+                    let mut available_indices: Vec<usize> = (0..fields.len()).collect();
+                    for _ in 0..num_to_mutate {
+                        if available_indices.is_empty() {
+                            break;
+                        }
+                        let random_vec_idx = rng.random_range(0..available_indices.len());
+                        let field_idx_to_mutate = available_indices.remove(random_vec_idx);
+
+                        if let Some(field_ty) = field_types
+                            .iter()
+                            .find(|f| f.id == Rc::new(fields[field_idx_to_mutate].id.clone()))
+                        {
+                            mutate_value(
+                                &mut fields[field_idx_to_mutate].val,
+                                &field_ty.ty,
+                                env,
+                                rng,
+                                depth + 1,
+                            );
+                        }
                     }
                 }
             }
@@ -255,13 +261,12 @@ fn mutate_value<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut 
             if let Ok(TypeInner::Variant(variant_fields)) =
                 env.trace_type(ty).map(|t| t.as_ref().clone())
             {
-                if !variant_fields.is_empty() && rng.random_bool(0.2) {
-                    // Switch to a different variant
+                if !variant_fields.is_empty() && rng.random_bool(0.5) {
                     let new_variant_idx = rng.random_range(0..variant_fields.len());
                     let new_field_type = &variant_fields[new_variant_idx];
-                    let mut new_val = IDLValue::Null; // Placeholder
-                    // Generate a new random value for the new variant
+                    let mut new_val = IDLValue::Null;
                     let seed = rng.random::<u64>().to_le_bytes().to_vec();
+                    // Is this efficient?
                     if let Ok(random_val) = candid_parser::random::any(
                         &seed,
                         Configs::from_str("").unwrap(),
@@ -273,11 +278,10 @@ fn mutate_value<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut 
                             new_val = random_val.args[0].clone();
                         }
                     }
-                    v.0.id = Rc::into_inner(new_field_type.id.clone()).unwrap();
+                    v.0.id = (*new_field_type.id).clone();
                     v.0.val = new_val;
                     v.1 = new_variant_idx as u64;
                 } else {
-                    // Mutate the value of the current variant
                     if let Some(field_ty) = variant_fields
                         .iter()
                         .find(|f| f.id == Rc::new(v.0.id.clone()))
@@ -546,7 +550,6 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(STATIC_SEED);
         let mut p = Principal::anonymous();
         mutate_principal(&mut p, &mut rng);
-        // Generates a new random principal
         let expected =
             Principal::try_from(&[197, 8, 228, 253, 44, 55, 230, 45, 210, 76, 14, 52][..]).unwrap();
         assert_eq!(p, expected);
@@ -577,7 +580,6 @@ mod tests {
         let ty = TypeInner::Opt(TypeInner::Nat8.into()).into();
         let env = TypeEnv::new();
         mutate_opt(&mut opt_val, &ty, &env, &mut rng, 0);
-        // Mutates the inner value
         assert_eq!(*opt_val, IDLValue::Nat8(36));
     }
 
@@ -609,11 +611,10 @@ mod tests {
 
         mutate_value(&mut val, &ty, &env, &mut rng, 0);
 
-        // Mutates the first field
         let expected = IDLValue::Record(vec![
             candid::types::value::IDLField {
                 id: Label::Named("a".to_string()),
-                val: IDLValue::Nat8(238),
+                val: IDLValue::Nat8(207),
             },
             candid::types::value::IDLField {
                 id: Label::Named("b".to_string()),
@@ -650,8 +651,8 @@ mod tests {
 
         let expected = IDLValue::Variant(VariantValue(
             Box::new(candid::types::value::IDLField {
-                id: Label::Named("A".to_string()),
-                val: IDLValue::Nat8(207),
+                id: Label::Named("B".to_string()),
+                val: IDLValue::Bool(false),
             }),
             0,
         ));
