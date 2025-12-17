@@ -1,5 +1,5 @@
-use canfuzz::custom::decode_map::{DECODING_MAP_OBSERVER_NAME, DecodingMapFeedback, MAP};
-use canfuzz::custom::oom_exit_kind::OomLogic;
+use canfuzz::custom::feedback::oom_exit_kind::OomLogic;
+use canfuzz::custom::observer::decode_map::{DECODING_MAP_OBSERVER_NAME, DecodingMapFeedback, MAP};
 use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};

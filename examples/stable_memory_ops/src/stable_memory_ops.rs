@@ -1,5 +1,5 @@
 use candid::Principal;
-use canfuzz::custom::candid_mutator::CandidTypeDefArgs;
+use canfuzz::custom::mutator::candid::CandidTypeDefArgs;
 use canfuzz::libafl::executors::ExitKind;
 use canfuzz::libafl::inputs::ValueInput;
 use once_cell::sync::OnceCell;

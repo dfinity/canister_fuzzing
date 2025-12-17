@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 use pocket_ic::PocketIcBuilder;
 use slog::Level;
 
-use canfuzz::custom::candid_mutator::CandidTypeDefArgs;
+use canfuzz::custom::mutator::candid::CandidTypeDefArgs;
 use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};

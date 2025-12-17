@@ -184,9 +184,6 @@ where
         _state: &mut S,
         _new_corpus_id: Option<libafl::corpus::CorpusId>,
     ) -> Result<(), Error> {
-        if let Some(id) = _new_corpus_id {
-            println!("New corpus id {id:?}");
-        }
         Ok(())
     }
 }
@@ -282,13 +279,11 @@ fn mutate_value<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut 
                     v.0.id = (*new_field_type.id).clone();
                     v.0.val = new_val;
                     v.1 = new_variant_idx as u64;
-                } else {
-                    if let Some(field_ty) = variant_fields
-                        .iter()
-                        .find(|f| f.id == Rc::new(v.0.id.clone()))
-                    {
-                        mutate_value(&mut v.0.val, &field_ty.ty, env, rng, depth + 1);
-                    }
+                } else if let Some(field_ty) = variant_fields
+                    .iter()
+                    .find(|f| f.id == Rc::new(v.0.id.clone()))
+                {
+                    mutate_value(&mut v.0.val, &field_ty.ty, env, rng, depth + 1);
                 }
             }
         }

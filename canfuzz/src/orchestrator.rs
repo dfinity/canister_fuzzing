@@ -16,8 +16,8 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::custom::candid_mutator::{CandidParserMutator, CandidTypeDefArgs};
-use crate::custom::oom_exit_kind::OomLogic;
+use crate::custom::feedback::oom_exit_kind::OomLogic;
+use crate::custom::mutator::candid::{CandidParserMutator, CandidTypeDefArgs};
 use crate::libafl::{
     Evaluator,
     corpus::CachedOnDiskCorpus,
