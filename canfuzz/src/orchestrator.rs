@@ -154,6 +154,14 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         unsafe { crate::instrumentation::COVERAGE_MAP }
     }
 
+    /// Provides configuration for the `CandidParserMutator`.
+    ///
+    /// By default, this returns `None`, which disables the Candid-aware mutator.
+    /// To enable it, override this method in your fuzzer implementation to return
+    /// `Some(CandidTypeDefArgs { ... })`. You will need to provide the path to the
+    /// `.did` file and the name of the canister method you intend to fuzz.
+    ///
+    /// This allows the fuzzer to perform structure-aware mutations on Candid-encoded inputs.
     fn get_candid_args() -> Option<CandidTypeDefArgs> {
         None
     }

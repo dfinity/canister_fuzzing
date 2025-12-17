@@ -1,3 +1,12 @@
+//! A `libAFL` mutator that is aware of the Candid type definitions.
+//!
+//! This mutator can perform structured mutations on Candid-encoded data,
+//! increasing the chances of generating valid and interesting inputs for
+//! canister fuzzing. It operates in two main modes:
+//! 1.  **Random Generation**: Creates entirely new, valid Candid arguments from scratch based on the `.did` file definition.
+//! 2.  **Structure-Aware Mutation**: Decodes existing Candid data, intelligently mutates one of the values within the structure
+//!     (e.g., changing a number, modifying a string, altering a vector), and then re-encodes it.
+
 use candid::types::{Type, TypeInner};
 use candid::{IDLArgs, IDLValue, Int, Nat, Principal, TypeEnv};
 use candid_parser::configs::{Configs, Scope, ScopePos};
@@ -22,11 +31,17 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::str::FromStr;
 
+/// Configuration for the `CandidParserMutator`.
+///
+/// It specifies the `.did` file and the method name to be fuzzed, allowing the
+/// mutator to understand the expected Candid argument types.
 pub struct CandidTypeDefArgs {
+    /// The path to the Candid definition (`.did`) file.
     pub definition: PathBuf,
+    /// The name of the canister method to target for fuzzing.
     pub method: String,
 }
-
+/// A `libAFL` mutator that parses and mutates Candid-encoded data based on a `.did` definition.
 pub struct CandidParserMutator<S> {
     is_enabled: bool,
     env: TypeEnv,
@@ -36,6 +51,11 @@ pub struct CandidParserMutator<S> {
 }
 
 impl<S> CandidParserMutator<S> {
+    /// Creates a new `CandidParserMutator`.
+    ///
+    /// If `candid_args` is `Some`, it parses the specified `.did` file to extract the
+    /// type environment and the argument types for the given method. If `candid_args`
+    /// is `None`, the mutator is disabled.
     pub fn new(candid_args: Option<CandidTypeDefArgs>) -> Self {
         if candid_args.is_none() {
             return Self {
@@ -62,6 +82,10 @@ impl<S> CandidParserMutator<S> {
         }
     }
 
+    /// Generates a completely new, valid Candid `IDLArgs` value from scratch based on the
+    /// method's type definition and replaces the input with its byte representation.
+    ///
+    /// This uses the `candid-parser`'s random generation capabilities.
     fn mutate_random_generation<I, R>(
         &self,
         input: &mut I,
@@ -96,6 +120,12 @@ impl<S> CandidParserMutator<S> {
         Ok(MutationResult::Mutated)
     }
 
+    /// Mutates an existing Candid-encoded input.
+    ///
+    /// It first decodes the input bytes into `IDLArgs`. It then performs a subtyping
+    /// check to ensure the decoded types are compatible with the expected method argument types.
+    /// If they are, it recursively traverses the `IDLValue` structure and applies a
+    /// type-aware mutation to one of the values. Finally, it re-encodes the mutated `IDLArgs`.
     fn mutate_existing_bytes<I, R>(
         &self,
         input: &mut I,
@@ -188,6 +218,10 @@ where
     }
 }
 
+/// The main mutation dispatcher. It recursively traverses the `IDLValue` structure
+/// and applies a type-specific mutation.
+///
+/// A depth limit is used to prevent infinite recursion on recursive types.
 fn mutate_value<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut R, depth: usize) {
     if depth > 20 {
         return;
@@ -298,6 +332,7 @@ fn mutate_value<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut 
     }
 }
 
+/// Mutates a `String` by inserting a "naughty string", removing characters, or flipping bits.
 fn mutate_text<R: Rng>(s: &mut String, rng: &mut R) {
     match rng.random_range(0..10) {
         0..5 => {
@@ -324,6 +359,7 @@ fn mutate_text<R: Rng>(s: &mut String, rng: &mut R) {
     }
 }
 
+/// Mutates an `Int` (arbitrary-precision integer) using various arithmetic strategies.
 fn mutate_int<R: Rng>(i: &mut Int, rng: &mut R) {
     let val = &i.0;
     let new_val = match rng.random_range(0..20) {
@@ -346,6 +382,7 @@ fn mutate_int<R: Rng>(i: &mut Int, rng: &mut R) {
     *i = Int(new_val);
 }
 
+/// Mutates a `Nat` (arbitrary-precision natural number) using various arithmetic strategies.
 fn mutate_nat<R: Rng>(n: &mut Nat, rng: &mut R) {
     let val = &n.0;
     let new_val = match rng.random_range(0..20) {
@@ -373,6 +410,7 @@ fn mutate_nat<R: Rng>(n: &mut Nat, rng: &mut R) {
     *n = Nat(new_val);
 }
 
+/// Mutates a floating-point number, with a chance to introduce `NaN` or `Infinity`.
 fn mutate_float<F, R: Rng>(f: F, rng: &mut R) -> F
 where
     F: num_traits::Float + Copy,
@@ -395,6 +433,7 @@ where
     }
 }
 
+/// Mutates a `Vec<IDLValue>` by removing, duplicating, or mutating an element.
 fn mutate_vec<R: Rng>(
     vec: &mut Vec<IDLValue>,
     item_ty: &Type,
@@ -426,6 +465,8 @@ fn mutate_vec<R: Rng>(
     }
 }
 
+/// Mutates a `Principal` by replacing it with the management canister, anonymous principal,
+/// or a randomly generated principal.
 fn mutate_principal<R: Rng>(p: &mut Principal, rng: &mut R) {
     *p = match rng.random::<u8>() {
         u8::MAX => Principal::management_canister(),
@@ -446,12 +487,14 @@ fn mutate_principal<R: Rng>(p: &mut Principal, rng: &mut R) {
     }
 }
 
+/// Mutates a `blob` (a `Vec<u8>`) by resizing it and filling it with random bytes.
 fn mutate_blob<R: Rng>(b: &mut Vec<u8>, rng: &mut R) {
     let new_size = rng.random_range(0..b.len());
     b.resize(new_size, 0);
     rng.fill_bytes(b);
 }
 
+/// A generic mutator for primitive integer types (`i8`, `u16`, etc.).
 fn mutate_primitive<T, R>(val: T, rng: &mut R) -> T
 where
     T: PrimInt + WrappingAdd + WrappingSub + WrappingMul,
@@ -469,6 +512,7 @@ where
     }
 }
 
+/// Mutates the inner value of an `Opt`.
 fn mutate_opt<R: Rng>(o: &mut Box<IDLValue>, ty: &Type, env: &TypeEnv, rng: &mut R, depth: usize) {
     if let Ok(TypeInner::Opt(inner_ty)) = env.trace_type(ty).map(|t| t.as_ref().clone()) {
         mutate_value(o, &inner_ty, env, rng, depth);
