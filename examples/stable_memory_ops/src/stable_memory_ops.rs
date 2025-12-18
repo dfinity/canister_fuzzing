@@ -5,7 +5,6 @@ use canfuzz::libafl::inputs::ValueInput;
 use once_cell::sync::OnceCell;
 use pocket_ic::PocketIcBuilder;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use slog::Level;
 
@@ -68,6 +67,7 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
         let test = PocketIcBuilder::new()
             .with_application_subnet()
             .with_log_level(Level::Critical)
+            .with_auto_progress()
             .build();
         self.0.init_state(test);
         let test = self.get_state_machine();
@@ -111,9 +111,6 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
             bytes,
         );
 
-        let exit_status = parse_canister_result_for_trap(result);
-        test.advance_time(Duration::from_secs(60));
-
-        exit_status
+        parse_canister_result_for_trap(result)
     }
 }

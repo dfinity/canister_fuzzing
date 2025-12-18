@@ -512,10 +512,41 @@ where
     }
 }
 
-/// Mutates the inner value of an `Opt`.
-fn mutate_opt<R: Rng>(o: &mut Box<IDLValue>, ty: &Type, env: &TypeEnv, rng: &mut R, depth: usize) {
+/// Mutates an `Opt` value.
+///
+/// This function can:
+/// 1. Change `Some(v)` to `None`.
+/// 2. Change `None` to `Some(v)` with a newly generated value.
+/// 3. Mutate the inner value of `Some(v)`.
+fn mutate_opt<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut R, depth: usize) {
     if let Ok(TypeInner::Opt(inner_ty)) = env.trace_type(ty).map(|t| t.as_ref().clone()) {
-        mutate_value(o, &inner_ty, env, rng, depth);
+        match rng.random_range(0..10) {
+            // Some -> None
+            0..3 if !matches!(val, IDLValue::None) => {
+                *val = IDLValue::None;
+            }
+            // None -> Some
+            3..6 if matches!(val, IDLValue::None) => {
+                let seed = rng.random::<u64>().to_le_bytes().to_vec();
+                if let Ok(random_val) = candid_parser::random::any(
+                    &seed,
+                    Configs::from_str("").unwrap(),
+                    env,
+                    &[inner_ty.clone()],
+                    &None,
+                ) {
+                    if let Some(new_val) = random_val.args.into_iter().next() {
+                        *val = IDLValue::Opt(Box::new(new_val));
+                    }
+                }
+            }
+            // Mutate inner value
+            _ => {
+                if let IDLValue::Opt(inner_val) = val {
+                    mutate_value(inner_val, &inner_ty, env, rng, depth);
+                }
+            }
+        }
     }
 }
 
@@ -620,7 +651,7 @@ mod tests {
         let ty = TypeInner::Opt(TypeInner::Nat8.into()).into();
         let env = TypeEnv::new();
         mutate_opt(&mut opt_val, &ty, &env, &mut rng, 0);
-        assert_eq!(*opt_val, IDLValue::Nat8(36));
+        assert_eq!(*opt_val, IDLValue::None);
     }
 
     #[test]
