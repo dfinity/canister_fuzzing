@@ -16,7 +16,8 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::custom::oom_exit_kind::OomLogic;
+use crate::custom::feedback::oom_exit_kind::OomLogic;
+use crate::custom::mutator::candid::{CandidParserMutator, CandidTypeDefArgs};
 use crate::libafl::{
     Evaluator,
     corpus::CachedOnDiskCorpus,
@@ -153,6 +154,18 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         unsafe { crate::instrumentation::COVERAGE_MAP }
     }
 
+    /// Provides configuration for the `CandidParserMutator`.
+    ///
+    /// By default, this returns `None`, which disables the Candid-aware mutator.
+    /// To enable it, override this method in your fuzzer implementation to return
+    /// `Some(CandidTypeDefArgs { ... })`. You will need to provide the path to the
+    /// `.did` file and the name of the canister method you intend to fuzz.
+    ///
+    /// This allows the fuzzer to perform structure-aware mutations on Candid-encoded inputs.
+    fn get_candid_args() -> Option<CandidTypeDefArgs> {
+        None
+    }
+
     /// The main entry point for running a fuzzing campaign.
     ///
     /// This function orchestrates the entire fuzzing process:
@@ -243,11 +256,13 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
                 )
                 .unwrap();
         }
+
         // Standard mutational stage with a havoc mutator
         let mutator = HavocScheduledMutator::new(havoc_mutations());
         let mut stages = tuple_list!(
             calibration_stage,
-            StdMutationalStage::new(mutator),
+            StdMutationalStage::transforming(CandidParserMutator::new(Self::get_candid_args())),
+            StdMutationalStage::transforming(mutator),
             stats_stage
         );
 

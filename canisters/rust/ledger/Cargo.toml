@@ -15,3 +15,4 @@ candid_parser = { workspace = true }
 ic-cdk = { workspace = true }
 ic-cdk-macros = { workspace = true }
 serde = { workspace = true }
+ic-dummy-getrandom-for-wasm = { workspace = true }

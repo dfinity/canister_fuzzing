@@ -327,16 +327,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ee88dd48c1322ae112442b804ba53097c383664921d6d3757bebfdd7821ee64"
 dependencies = [
  "anyhow",
+ "arbitrary",
  "candid",
  "codespan-reporting",
  "convert_case",
+ "fake",
  "handlebars",
  "hex",
  "lalrpop",
  "lalrpop-util",
  "logos",
  "num-bigint",
+ "num-traits",
  "pretty",
+ "rand 0.8.5",
  "serde",
  "thiserror 1.0.69",
  "toml",
@@ -349,11 +353,15 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "candid",
+ "candid_parser",
  "chrono",
  "difference",
- "ic-management-canister-types 0.5.0",
+ "ic-management-canister-types",
  "libafl",
  "libafl_bolts",
+ "naughty-strings",
+ "num-bigint",
+ "num-traits",
  "once_cell",
  "pocket-ic",
  "rand 0.9.2",
@@ -623,6 +631,7 @@ dependencies = [
  "candid_parser",
  "ic-cdk",
  "ic-cdk-macros",
+ "ic-dummy-getrandom-for-wasm",
  "serde",
 ]
 
@@ -699,6 +708,12 @@ dependencies = [
  "derive_builder_core",
  "syn 2.0.111",
 ]
+
+[[package]]
+name = "deunicode"
+version = "1.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
 
 [[package]]
 name = "difference"
@@ -865,6 +880,16 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "fake"
+version = "2.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d391ba4af7f1d93f01fcf7b2f29e2bc9348e109dfdbf4dcbdc51dfa38dab0b6"
+dependencies = [
+ "deunicode",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -1304,7 +1329,7 @@ dependencies = [
  "ic-cdk-executor",
  "ic-cdk-macros",
  "ic-error-types",
- "ic-management-canister-types 0.5.0",
+ "ic-management-canister-types",
  "ic0",
  "pin-project-lite",
  "serde",
@@ -1350,6 +1375,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ic-dummy-getrandom-for-wasm"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e16d0dde1892f34bc07df75d68137abdecef8effb819c5b1003ee31654a81b9e"
+dependencies = [
+ "getrandom 0.2.16",
+]
+
+[[package]]
 name = "ic-error-types"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1358,17 +1392,6 @@ dependencies = [
  "serde",
  "strum",
  "strum_macros",
-]
-
-[[package]]
-name = "ic-management-canister-types"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea7e5b8a0f7c3b320d9450ac950547db4f24a31601b5d398f9680b64427455d2"
-dependencies = [
- "candid",
- "serde",
- "serde_bytes",
 ]
 
 [[package]]
@@ -1670,6 +1693,7 @@ dependencies = [
  "candid_parser",
  "ic-cdk",
  "ic-cdk-macros",
+ "ic-dummy-getrandom-for-wasm",
  "serde",
 ]
 
@@ -1953,6 +1977,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "naughty-strings"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77f60b021f91344453a569296aced9b149bdf75ac182cfc4631f6b55a5aa590f"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2208,9 +2241,9 @@ dependencies = [
 
 [[package]]
 name = "pocket-ic"
-version = "10.0.0"
+version = "11.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c9b78f339182efb981ceca2ac360aa280609f8d8c785e5a7eeda488f53497a8"
+checksum = "67394a1de5e9bd67e92eef90c9034fbd28f26cfcb64854f187f3979191d6380c"
 dependencies = [
  "backoff",
  "base64 0.13.1",
@@ -2218,10 +2251,11 @@ dependencies = [
  "flate2",
  "hex",
  "ic-certification",
- "ic-management-canister-types 0.3.3",
+ "ic-management-canister-types",
  "ic-transport-types",
  "reqwest",
  "schemars",
+ "semver",
  "serde",
  "serde_bytes",
  "serde_cbor",
@@ -2776,6 +2810,10 @@ name = "semver"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
+dependencies = [
+ "serde",
+ "serde_core",
+]
 
 [[package]]
 name = "serde"
@@ -3032,6 +3070,7 @@ dependencies = [
  "candid_parser",
  "ic-cdk",
  "ic-cdk-macros",
+ "ic-dummy-getrandom-for-wasm",
  "ic-stable-structures",
  "serde",
  "serde_bytes",
@@ -3529,6 +3568,7 @@ dependencies = [
  "candid_parser",
  "ic-cdk",
  "ic-cdk-macros",
+ "ic-dummy-getrandom-for-wasm",
  "serde",
 ]
 

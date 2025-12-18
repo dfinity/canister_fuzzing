@@ -1,10 +1,10 @@
 use candid::Principal;
+use canfuzz::custom::mutator::candid::CandidTypeDefArgs;
 use canfuzz::libafl::executors::ExitKind;
 use canfuzz::libafl::inputs::ValueInput;
 use once_cell::sync::OnceCell;
 use pocket_ic::PocketIcBuilder;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use slog::Level;
 
@@ -38,6 +38,22 @@ impl FuzzerStateProvider for StableMemoryFuzzer {
 }
 
 impl FuzzerOrchestrator for StableMemoryFuzzer {
+    fn get_candid_args() -> Option<CandidTypeDefArgs> {
+        Some(CandidTypeDefArgs {
+            definition: PathBuf::from(file!())
+                .parent() // src
+                .unwrap()
+                .parent() // stable_memory_ops
+                .unwrap()
+                .parent() // examples
+                .unwrap()
+                .parent() // canister_fuzzing
+                .unwrap()
+                .join("canisters/rust/stable_memory/src/service.did"),
+            method: "stable_memory_ops".to_string(),
+        })
+    }
+
     fn corpus_dir(&self) -> std::path::PathBuf {
         PathBuf::from(file!())
             .parent()
@@ -51,6 +67,7 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
         let test = PocketIcBuilder::new()
             .with_application_subnet()
             .with_log_level(Level::Critical)
+            .with_auto_progress()
             .build();
         self.0.init_state(test);
         let test = self.get_state_machine();
@@ -94,9 +111,6 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
             bytes,
         );
 
-        let exit_status = parse_canister_result_for_trap(result);
-        test.advance_time(Duration::from_secs(60));
-
-        exit_status
+        parse_canister_result_for_trap(result)
     }
 }

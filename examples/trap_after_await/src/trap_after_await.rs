@@ -8,6 +8,7 @@ use once_cell::sync::OnceCell;
 use pocket_ic::PocketIcBuilder;
 use slog::Level;
 
+use canfuzz::custom::mutator::candid::CandidTypeDefArgs;
 use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
@@ -47,6 +48,21 @@ impl FuzzerStateProvider for TrapAfterAwaitFuzzer {
 }
 
 impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
+    fn get_candid_args() -> Option<CandidTypeDefArgs> {
+        Some(CandidTypeDefArgs {
+            definition: PathBuf::from(file!())
+                .parent() // src
+                .unwrap()
+                .parent() // trap_after_await
+                .unwrap()
+                .parent() // examples
+                .unwrap()
+                .parent() // canister_fuzzing
+                .unwrap()
+                .join("canisters/rust/transfer/src/service.did"),
+            method: "refund_balance".to_string(),
+        })
+    }
     fn corpus_dir(&self) -> std::path::PathBuf {
         PathBuf::from(file!())
             .parent()
