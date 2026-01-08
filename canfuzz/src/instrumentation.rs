@@ -137,10 +137,10 @@ fn instrument_for_afl(
 
 /// Injects the necessary global variables for AFL instrumentation.
 ///
-/// - `__afl_prev_loc_N`: A set of `history_size` mutable i32 globals to store the IDs
+/// - `__afl_prev_loc_N`: A set of `history_size` mutable i32 (or i64 for wasm64) globals to store the IDs
 ///   of the previously executed basic blocks. This is used to track execution history
 ///   in the control flow graph.
-/// - `__afl_mem_ptr`: An immutable i32 global that holds the base address (0) of the coverage map.
+/// - `__afl_mem_ptr`: An immutable i32 (or i64 for wasm64) global that holds the base address (0) of the coverage map.
 fn inject_globals(
     module: &mut Module<'_>,
     history_size: usize,
@@ -310,8 +310,8 @@ fn instrument_branches(
 ///   ...
 ///   prev_loc[0] = curr_location >> 1;
 /// ```
-/// The generated function takes the current location (`curr_location`) as an i32 parameter
-/// and is added to the module.
+/// The generated function takes the current location (`curr_location`) as an i32 (or i64 for wasm64)
+/// parameter and is added to the module.
 ///
 /// # Returns
 ///
@@ -1309,6 +1309,123 @@ mod tests {
                         local.get 0
                         i32.const 1
                         i32.shr_u
+                        global.set 0
+                    )
+                    )
+            "#,
+        )
+        .unwrap();
+
+        let generated = instrument_wasm_for_fuzzing(InstrumentationArgs {
+            wasm_bytes: wat,
+            history_size,
+            seed: Seed::Static(42),
+        });
+
+        wasm_equality(generated, expected);
+    }
+
+    #[test]
+    fn instrumentation_round_trip_wasm64() {
+        let wat = wat::parse_str(
+            r#"
+                (module
+                    (type (;0;) (func (param i64)))
+                    (memory (;0;) i64 1)
+                    (export "memory" (memory 0))
+                    (export "check_even" (func 0))
+                    (func (;0;) (type 0) (param $num i64)
+                        local.get $num
+                        i64.const 2
+                        i64.rem_u
+                        i64.eqz
+                        if ;; label = @1
+                        i64.const 0
+                        i64.const 1
+                        i64.store
+                        else
+                        i64.const 0
+                        i64.const 0
+                        i64.store
+                        end
+                    )
+                )
+            "#,
+        )
+        .unwrap();
+
+        let history_size: usize = 2;
+
+        let expected = wat::parse_str(
+            r#"
+                (module
+                    (type (;0;) (func (param i64)))
+                    (type (;1;) (func (param i64 i64)))
+                    (type (;2;) (func))
+                    (import "ic0" "msg_reply_data_append" (func (;0;) (type 1)))
+                    (import "ic0" "msg_reply" (func (;1;) (type 2)))
+                    (memory (;0;) i64 1)
+                    (global (;0;) (mut i64) i64.const 0)
+                    (global (;1;) (mut i64) i64.const 0)
+                    (global (;2;) i64 i64.const 0)
+                    (export "memory" (memory 0))
+                    (export "check_even" (func 2))
+                    (export "canister_update __export_coverage_for_afl" (func 3))
+                    (func (;2;) (type 0) (param i64)
+                        i64.const 17486
+                        call 4
+                        local.get 0
+                        i64.const 2
+                        i64.rem_u
+                        i64.eqz
+                        if ;; label = @1
+                        i64.const 69016
+                        call 4
+                        i64.const 0
+                        i64.const 1
+                        i64.store
+                        else
+                        i64.const 32602
+                        call 4
+                        i64.const 0
+                        i64.const 0
+                        i64.store
+                        end
+                    )
+                    (func (;3;) (type 2)
+                        i64.const 71136
+                        call 4
+                        global.get 2
+                        i64.const 131072
+                        call 0
+                        call 1
+                        global.get 2
+                        i32.const 0
+                        i64.const 131072
+                        memory.fill
+                    )
+                    (func (;4;) (type 0) (param i64)
+                        (local i64)
+                        local.get 0
+                        global.get 0
+                        i64.xor
+                        global.get 1
+                        i64.xor
+                        global.get 2
+                        i64.add
+                        local.tee 1
+                        local.get 1
+                        i64.load8_u
+                        i64.const 1
+                        i64.add
+                        i64.store8
+                        global.get 0
+                        i64.const 1
+                        i64.shr_u
+                        global.set 1
+                        local.get 0
+                        i64.const 1
+                        i64.shr_u
                         global.set 0
                     )
                     )
