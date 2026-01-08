@@ -108,7 +108,6 @@ fn instrument_for_afl(
         .map(|m| m.ty.memory64)
         .unwrap_or(false);
 
-    println!("Memory type : {:?}", is_memory64);
     let (afl_prev_loc_indices, afl_mem_ptr_idx) =
         inject_globals(module, instrumentation_args.history_size, is_memory64);
     println!(
