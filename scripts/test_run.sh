@@ -10,7 +10,7 @@ for fuzzer_path in "$EXAMPLES_DIR"/*; do
     if [ -d "$fuzzer_path" ]; then
         fuzzer_name=$(basename "$fuzzer_path")
         echo "Building fuzzer: $fuzzer_name"
-        cargo build --release -p "$fuzzer_name"
+        CANISTER_FORCE_BUILD=1 cargo build --release -p "$fuzzer_name"
         echo "Running fuzzer: $fuzzer_name"
         CANISTER_FORCE_BUILD=1 $TIMEOUT_CMD "${RUN_DURATION}s" cargo run --release -p "$fuzzer_name" || [ $? -eq 124 ]
     fi
