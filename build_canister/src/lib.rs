@@ -17,7 +17,7 @@ pub struct CanisterBuildOpts<'a> {
 
 pub fn build_canisters(canisters: Vec<CanisterBuildOpts>) {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-env-changed=FORCE_BUILD");
+    println!("cargo:rerun-if-env-changed=CANISTER_FORCE_BUILD");
 
     for canister in canisters {
         let wasm_path = match canister.ty {
