@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 EXAMPLES_DIR="examples"
 RUN_DURATION=5
@@ -11,7 +12,7 @@ for fuzzer_path in "$EXAMPLES_DIR"/*; do
         echo "Building fuzzer: $fuzzer_name"
         cargo build --release -p "$fuzzer_name"
         echo "Running fuzzer: $fuzzer_name"
-        $TIMEOUT_CMD "${RUN_DURATION}s" cargo run --release -p "$fuzzer_name"
+        CANISTER_FORCE_BUILD=1 $TIMEOUT_CMD "${RUN_DURATION}s" cargo run --release -p "$fuzzer_name" || [ $? -eq 124 ]
     fi
 done
 
