@@ -110,8 +110,10 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         } else {
             ExitKind::Ok
         };
-        let instructions = if status == ExitKind::Ok && result.is_ok() {
-            Decode!(&result.unwrap(), u64).unwrap()
+        let instructions = if status == ExitKind::Ok
+            && let Ok(result) = result
+        {
+            Decode!(&result, u64).unwrap()
         } else {
             0
         };
