@@ -262,29 +262,28 @@ fn mutate_value<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut 
         IDLValue::Record(fields) => {
             if let Ok(TypeInner::Record(field_types)) =
                 env.trace_type(ty).map(|t| t.as_ref().clone())
+                && !fields.is_empty()
             {
-                if !fields.is_empty() {
-                    let num_to_mutate = rng.random_range(1..=fields.len());
-                    let mut available_indices: Vec<usize> = (0..fields.len()).collect();
-                    for _ in 0..num_to_mutate {
-                        if available_indices.is_empty() {
-                            break;
-                        }
-                        let random_vec_idx = rng.random_range(0..available_indices.len());
-                        let field_idx_to_mutate = available_indices.remove(random_vec_idx);
+                let num_to_mutate = rng.random_range(1..=fields.len());
+                let mut available_indices: Vec<usize> = (0..fields.len()).collect();
+                for _ in 0..num_to_mutate {
+                    if available_indices.is_empty() {
+                        break;
+                    }
+                    let random_vec_idx = rng.random_range(0..available_indices.len());
+                    let field_idx_to_mutate = available_indices.remove(random_vec_idx);
 
-                        if let Some(field_ty) = field_types
-                            .iter()
-                            .find(|f| f.id == Rc::new(fields[field_idx_to_mutate].id.clone()))
-                        {
-                            mutate_value(
-                                &mut fields[field_idx_to_mutate].val,
-                                &field_ty.ty,
-                                env,
-                                rng,
-                                depth + 1,
-                            );
-                        }
+                    if let Some(field_ty) = field_types
+                        .iter()
+                        .find(|f| f.id == Rc::new(fields[field_idx_to_mutate].id.clone()))
+                    {
+                        mutate_value(
+                            &mut fields[field_idx_to_mutate].val,
+                            &field_ty.ty,
+                            env,
+                            rng,
+                            depth + 1,
+                        );
                     }
                 }
             }
@@ -303,13 +302,13 @@ fn mutate_value<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut 
                         &seed,
                         Configs::from_str("").unwrap(),
                         env,
-                        &[new_field_type.ty.clone()],
+                        std::slice::from_ref(&new_field_type.ty),
                         &None,
-                    ) {
-                        if !random_val.args.is_empty() {
-                            new_val = random_val.args[0].clone();
-                        }
+                    ) && !random_val.args.is_empty()
+                    {
+                        new_val = random_val.args[0].clone();
                     }
+
                     v.0.id = (*new_field_type.id).clone();
                     v.0.val = new_val;
                     v.1 = new_variant_idx as u64;
@@ -532,12 +531,11 @@ fn mutate_opt<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut R,
                     &seed,
                     Configs::from_str("").unwrap(),
                     env,
-                    &[inner_ty.clone()],
+                    std::slice::from_ref(&inner_ty),
                     &None,
-                ) {
-                    if let Some(new_val) = random_val.args.into_iter().next() {
-                        *val = IDLValue::Opt(Box::new(new_val));
-                    }
+                ) && let Some(new_val) = random_val.args.into_iter().next()
+                {
+                    *val = IDLValue::Opt(Box::new(new_val));
                 }
             }
             // Mutate inner value

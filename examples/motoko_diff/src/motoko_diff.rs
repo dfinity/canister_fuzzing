@@ -106,8 +106,10 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
 
         let exit_status = parse_canister_result_for_trap(result.clone());
 
-        let exit_status = if exit_status == ExitKind::Ok && result.is_ok() {
-            let result = Decode!(&result.unwrap(), Vec<u8>).unwrap();
+        let exit_status = if exit_status == ExitKind::Ok
+            && let Ok(result) = result
+        {
+            let result = Decode!(&result, Vec<u8>).unwrap();
             if let Ok((signature, _)) =
                 hazmat::sign_prehashed::<Secp256k1, Scalar>(&key_inner, k_inner, &digest)
             {
