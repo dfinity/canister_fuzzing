@@ -102,12 +102,7 @@ fn instrument_for_afl(
     module: &mut Module<'_>,
     instrumentation_args: &InstrumentationArgs,
 ) -> Result<()> {
-    let is_memory64 = module
-        .memories
-        .get_mem_by_id(MemoryID(0))
-        .map(|m| m.ty.memory64)
-        .unwrap_or(false);
-
+    let is_memory64 = is_memory64(module);
     let (afl_prev_loc_indices, afl_mem_ptr_idx) =
         inject_globals(module, instrumentation_args.history_size, is_memory64);
     println!(
@@ -464,6 +459,53 @@ fn ensure_ic0_imports(
     }
 
     Ok((data_append_idx.unwrap(), reply_idx.unwrap()))
+}
+
+/// Checks if the module is using 64-bit memory addressing for the purpose of instrumentation.
+///
+/// This function determines whether to use 64-bit or 32-bit instructions for memory operations
+/// and global variables injected during instrumentation.
+///
+/// The logic is as follows:
+/// 1. If the module's memory (index 0) is 32-bit, it returns `false`.
+/// 2. If the memory is 64-bit:
+///    - If `ic0.msg_reply_data_append` is NOT imported, it assumes 64-bit usage and returns `true`.
+///    - If `ic0.msg_reply_data_append` IS imported, it checks the function signature.
+///      - If the parameters are `i64`, it returns `true`.
+///      - Otherwise (e.g., `i32`), it returns `false`.
+fn is_memory64(module: &Module<'_>) -> bool {
+    let memory_64 = module
+        .memories
+        .get_mem_by_id(MemoryID(0))
+        .map(|m| m.ty.memory64)
+        .unwrap_or(false);
+
+    // The module is wasm32, no further checks needed
+    if !memory_64 {
+        return false;
+    }
+
+    // The module is guaranteed to be wasm64
+    let data_append_idx = module.imports.get_func(
+        API_VERSION_IC0.to_string(),
+        "msg_reply_data_append".to_string(),
+    );
+
+    // If the systemAPI is not imported, we can safely choose i64 for wasm64
+    if data_append_idx.is_none() {
+        return true;
+    }
+
+    // If the systemAPI is imported, we follow the imported DataType for compatability
+    // See: https://legacy.internetcomputer.org/docs/references/ic-interface-spec#responding
+    let type_id = module
+        .functions
+        .get_fn_by_id(data_append_idx.unwrap())
+        .unwrap()
+        .get_type_id();
+    let ty = module.types.get(type_id).unwrap();
+    let api_uses_i64 = ty.params().iter().all(|v| matches!(v, DataType::I64));
+    return api_uses_i64;
 }
 
 /// Validates the instrumented Wasm module.
@@ -1439,5 +1481,49 @@ mod tests {
         });
 
         wasm_equality(generated, expected);
+    }
+
+    #[test]
+    fn test_is_memory64_wasm32() {
+        let wat = wat::parse_str(r#"(module (memory 1))"#).unwrap();
+        let module = Module::parse(&wat, false, false).unwrap();
+        assert!(!is_memory64(&module));
+    }
+
+    #[test]
+    fn test_is_memory64_wasm64_no_import() {
+        let wat = wat::parse_str(r#"(module (memory i64 1))"#).unwrap();
+        let module = Module::parse(&wat, false, false).unwrap();
+        assert!(is_memory64(&module));
+    }
+
+    #[test]
+    fn test_is_memory64_wasm64_import_i64() {
+        let wat = wat::parse_str(
+            r#"
+            (module
+                (import "ic0" "msg_reply_data_append" (func (param i64 i64)))
+                (memory i64 1)
+            )
+            "#,
+        )
+        .unwrap();
+        let module = Module::parse(&wat, false, false).unwrap();
+        assert!(is_memory64(&module));
+    }
+
+    #[test]
+    fn test_is_memory64_wasm64_import_i32() {
+        let wat = wat::parse_str(
+            r#"
+            (module
+                (import "ic0" "msg_reply_data_append" (func (param i32 i32)))
+                (memory i64 1)
+            )
+            "#,
+        )
+        .unwrap();
+        let module = Module::parse(&wat, false, false).unwrap();
+        assert!(!is_memory64(&module));
     }
 }
