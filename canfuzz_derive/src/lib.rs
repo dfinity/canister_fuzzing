@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
 #[proc_macro_derive(FuzzerState)]
 pub fn derive_fuzzer_state(input: TokenStream) -> TokenStream {
@@ -25,10 +25,6 @@ pub fn derive_fuzzer_state(input: TokenStream) -> TokenStream {
             }
         }
         Fields::Named(ref fields) => {
-            // Try to find a field named "state" or of type "FuzzerState"
-            // For simplicity, let's look for a field named "state" first, or fail if ambiguous.
-            // Given the current usage in examples, it's always MyFuzzer(FuzzerState).
-            // But let's try to support MyFuzzer { state: FuzzerState } too.
             let state_field = fields
                 .named
                 .iter()
