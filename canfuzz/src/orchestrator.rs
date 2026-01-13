@@ -40,20 +40,11 @@ use crate::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 use crate::constants::COVERAGE_FN_EXPORT_NAME;
 use crate::fuzzer::FuzzerState;
 
-/// A trait for types that can provide access to the global `FuzzerState`.
-pub trait FuzzerStateProvider {
-    /// Returns a reference to the `FuzzerState`.
-    fn get_fuzzer_state(&self) -> &FuzzerState;
-
-    /// Returns a mutable reference to the `FuzzerState`.
-    fn get_fuzzer_state_mut(&mut self) -> &mut FuzzerState;
-}
-
 /// A trait that defines the necessary components for a canister fuzzing target.
 ///
 /// Implementors of this trait provide the specific logic for setting up the environment,
 /// executing a test case against one or more canisters, and cleaning up afterwards.
-pub trait FuzzerOrchestrator: FuzzerStateProvider {
+pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
     /// Performs one-time initialization at the start of the fuzzing campaign.
     /// This is where canisters are typically installed.
     fn init(&mut self);
@@ -75,12 +66,12 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
 
     /// Returns a thread-safe reference to the `PocketIc` instance.
     fn get_state_machine(&self) -> Arc<PocketIc> {
-        self.get_fuzzer_state().get_state_machine()
+        self.as_ref().get_state_machine()
     }
 
     /// Returns the `CanisterId` of the canister that has been instrumented for coverage.
     fn get_coverage_canister_id(&self) -> CanisterId {
-        self.get_fuzzer_state().get_coverage_canister_id()
+        self.as_ref().get_coverage_canister_id()
     }
 
     /// Creates and returns the path to a new timestamped directory for storing input items.
@@ -97,7 +88,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR is not set");
         let input_dir = PathBuf::from(out_dir)
             .join("artifacts")
-            .join(self.get_fuzzer_state().name())
+            .join(self.as_ref().name())
             .join(Local::now().format("%Y%m%d_%H%M").to_string())
             .join("input");
         fs::create_dir_all(&input_dir)
@@ -120,7 +111,7 @@ pub trait FuzzerOrchestrator: FuzzerStateProvider {
         let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR is not set");
         let crashes_dir = PathBuf::from(out_dir)
             .join("artifacts")
-            .join(self.get_fuzzer_state().name())
+            .join(self.as_ref().name())
             .join(Local::now().format("%Y%m%d_%H%M").to_string())
             .join("crashes");
         fs::create_dir_all(&crashes_dir)

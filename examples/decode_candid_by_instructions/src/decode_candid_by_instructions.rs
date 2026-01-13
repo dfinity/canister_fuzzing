@@ -1,8 +1,9 @@
+use canfuzz::FuzzerState;
 use canfuzz::custom::feedback::oom_exit_kind::OomLogic;
 use canfuzz::custom::observer::decode_map::{DECODING_MAP_OBSERVER_NAME, DecodingMapFeedback, MAP};
 use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
-use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
+use canfuzz::orchestrator::FuzzerOrchestrator;
 use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 use candid::{Decode, Encode, Principal};
@@ -54,16 +55,8 @@ fn main() {
     fuzzer_state.run();
 }
 
+#[derive(FuzzerState)]
 struct DecodeCandidFuzzer(FuzzerState);
-
-impl FuzzerStateProvider for DecodeCandidFuzzer {
-    fn get_fuzzer_state(&self) -> &FuzzerState {
-        &self.0
-    }
-    fn get_fuzzer_state_mut(&mut self) -> &mut FuzzerState {
-        &mut self.0
-    }
-}
 
 impl FuzzerOrchestrator for DecodeCandidFuzzer {
     fn corpus_dir(&self) -> std::path::PathBuf {
@@ -80,10 +73,10 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
             .with_application_subnet()
             .with_log_level(Level::Critical)
             .build();
-        self.0.init_state(test);
+        self.as_mut().init_state(test);
         let test = self.get_state_machine();
 
-        for info in self.0.get_iter_mut_canister_info() {
+        for info in self.as_mut().get_iter_mut_canister_info() {
             let canister_id = test.create_canister();
             test.add_cycles(canister_id, u128::MAX / 2);
             let module = instrument_wasm_for_fuzzing(InstrumentationArgs {

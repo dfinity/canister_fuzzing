@@ -354,6 +354,7 @@ dependencies = [
  "assert_matches",
  "candid",
  "candid_parser",
+ "canfuzz_derive",
  "chrono",
  "difference",
  "ic-management-canister-types",
@@ -370,6 +371,15 @@ dependencies = [
  "wasmprinter",
  "wat",
  "wirm",
+]
+
+[[package]]
+name = "canfuzz_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]

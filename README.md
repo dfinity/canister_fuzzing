@@ -9,28 +9,24 @@ To build a fuzzer, one must implement the `FuzzerOrchestrator` trait. This invol
 ```rust
 // my_fuzzer/src/main.rs
 use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState, WasmPath};
-use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
+use canfuzz::orchestrator::FuzzerOrchestrator;
 use canfuzz::util::parse_canister_result_for_trap;
 use canfuzz::libafl::executors::ExitKind;
 use canfuzz::libafl::inputs::BytesInput;
 use candid::Principal;
 
-// 1. Define a struct for the fuzzer state
+// 1. Define a struct for the fuzzer state and derive FuzzerState
+// Requires features = ["derive"] in Cargo.toml
+#[derive(canfuzz::FuzzerState)]
 struct MyFuzzer(FuzzerState);
 
-// 2. Implement the trait to provide access to the state
-impl FuzzerStateProvider for MyFuzzer {
-    fn get_fuzzer_state(&self) -> &FuzzerState { &self.0 }
-    fn get_fuzzer_state_mut(&mut self) -> &mut FuzzerState { &mut self.0 }
-}
-
-// 3. Implement the core fuzzing logic
+// 2. Implement the core fuzzing logic
 impl FuzzerOrchestrator for MyFuzzer {
     /// Sets up the IC environment and installs canisters.
     fn init(&mut self) {
         // A helper that automatically initializes PocketIc and installs canisters.
         // Canisters are expected to be instrumented here.
-        self.get_fuzzer_state_mut().setup_canisters();
+        self.as_mut().setup_canisters();
     }
 
     /// Executes one test case with a given input.
