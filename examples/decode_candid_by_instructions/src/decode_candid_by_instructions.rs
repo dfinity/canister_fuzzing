@@ -1,6 +1,6 @@
 use canfuzz::custom::feedback::oom_exit_kind::OomLogic;
 use canfuzz::custom::observer::decode_map::{DECODING_MAP_OBSERVER_NAME, DecodingMapFeedback, MAP};
-use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
@@ -39,15 +39,17 @@ use canfuzz::libafl::monitors::SimpleMonitor;
 use canfuzz::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
 fn main() {
-    let mut fuzzer_state = DecodeCandidFuzzer(FuzzerState::new(
-        "decode_candid_by_instructions",
-        vec![CanisterInfo {
-            id: None,
-            name: "decode_candid".to_string(),
-            wasm_path: WasmPath::EnvVar("DECODE_CANDID_WASM_PATH".to_string()),
-            ty: CanisterType::Coverage,
-        }],
-    ));
+    let canister = CanisterBuilder::new("decode_candid")
+        .with_wasm_env("DECODE_CANDID_WASM_PATH")
+        .as_coverage()
+        .build();
+
+    let state = FuzzerBuilder::new()
+        .name("decode_candid_by_instructions")
+        .with_canister(canister)
+        .build();
+
+    let mut fuzzer_state = DecodeCandidFuzzer(state);
 
     fuzzer_state.run();
 }
@@ -57,6 +59,9 @@ struct DecodeCandidFuzzer(FuzzerState);
 impl FuzzerStateProvider for DecodeCandidFuzzer {
     fn get_fuzzer_state(&self) -> &FuzzerState {
         &self.0
+    }
+    fn get_fuzzer_state_mut(&mut self) -> &mut FuzzerState {
+        &mut self.0
     }
 }
 

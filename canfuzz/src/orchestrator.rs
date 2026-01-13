@@ -44,6 +44,9 @@ use crate::fuzzer::FuzzerState;
 pub trait FuzzerStateProvider {
     /// Returns a reference to the `FuzzerState`.
     fn get_fuzzer_state(&self) -> &FuzzerState;
+
+    /// Returns a mutable reference to the `FuzzerState`.
+    fn get_fuzzer_state_mut(&mut self) -> &mut FuzzerState;
 }
 
 /// A trait that defines the necessary components for a canister fuzzing target.

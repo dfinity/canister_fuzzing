@@ -7,21 +7,23 @@ use std::time::Duration;
 
 use slog::Level;
 
-use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 fn main() {
-    let mut fuzzer_state = MotokoShimFuzzer(FuzzerState::new(
-        "motoko_shim",
-        vec![CanisterInfo {
-            id: None,
-            name: "json_decode".to_string(),
-            wasm_path: WasmPath::EnvVar("MOTOKO_CANISTER_WASM_PATH".to_string()),
-            ty: CanisterType::Coverage,
-        }],
-    ));
+    let canister = CanisterBuilder::new("json_decode")
+        .with_wasm_env("MOTOKO_CANISTER_WASM_PATH")
+        .as_coverage()
+        .build();
+
+    let state = FuzzerBuilder::new()
+        .name("motoko_shim")
+        .with_canister(canister)
+        .build();
+
+    let mut fuzzer_state = MotokoShimFuzzer(state);
     fuzzer_state.run();
 }
 
@@ -30,6 +32,9 @@ struct MotokoShimFuzzer(FuzzerState);
 impl FuzzerStateProvider for MotokoShimFuzzer {
     fn get_fuzzer_state(&self) -> &FuzzerState {
         &self.0
+    }
+    fn get_fuzzer_state_mut(&mut self) -> &mut FuzzerState {
+        &mut self.0
     }
 }
 

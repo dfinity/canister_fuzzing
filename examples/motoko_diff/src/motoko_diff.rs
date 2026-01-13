@@ -14,21 +14,23 @@ use std::time::Duration;
 
 use slog::Level;
 
-use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 fn main() {
-    let mut fuzzer_state = MotokoDiffFuzzer(FuzzerState::new(
-        "motoko_diff",
-        vec![CanisterInfo {
-            id: None,
-            name: "ecdsa_sign".to_string(),
-            wasm_path: WasmPath::EnvVar("MOTOKO_CANISTER_WASM_PATH".to_string()),
-            ty: CanisterType::Coverage,
-        }],
-    ));
+    let canister = CanisterBuilder::new("ecdsa_sign")
+        .with_wasm_env("MOTOKO_CANISTER_WASM_PATH")
+        .as_coverage()
+        .build();
+
+    let state = FuzzerBuilder::new()
+        .name("motoko_diff")
+        .with_canister(canister)
+        .build();
+
+    let mut fuzzer_state = MotokoDiffFuzzer(state);
     fuzzer_state.run();
 }
 
@@ -37,6 +39,9 @@ struct MotokoDiffFuzzer(FuzzerState);
 impl FuzzerStateProvider for MotokoDiffFuzzer {
     fn get_fuzzer_state(&self) -> &FuzzerState {
         &self.0
+    }
+    fn get_fuzzer_state_mut(&mut self) -> &mut FuzzerState {
+        &mut self.0
     }
 }
 

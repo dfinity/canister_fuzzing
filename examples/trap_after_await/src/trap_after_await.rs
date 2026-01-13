@@ -9,7 +9,7 @@ use pocket_ic::PocketIcBuilder;
 use slog::Level;
 
 use canfuzz::custom::mutator::candid::CandidTypeDefArgs;
-use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canfuzz::util::read_canister_bytes;
@@ -18,23 +18,23 @@ const SYNCHRONOUS_EXECUTION: bool = false;
 static SNAPSHOT: OnceCell<(Vec<u8>, Vec<u8>)> = OnceCell::new();
 
 fn main() {
-    let mut fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState::new(
-        "trap_after_await",
-        vec![
-            CanisterInfo {
-                id: None,
-                name: "ledger".to_string(),
-                wasm_path: WasmPath::EnvVar("LEDGER_WASM_PATH".to_string()),
-                ty: CanisterType::Support,
-            },
-            CanisterInfo {
-                id: None,
-                name: "transfer".to_string(),
-                wasm_path: WasmPath::EnvVar("TRANSFER_WASM_PATH".to_string()),
-                ty: CanisterType::Coverage,
-            },
-        ],
-    ));
+    let ledger = CanisterBuilder::new("ledger")
+        .with_wasm_env("LEDGER_WASM_PATH")
+        .as_support()
+        .build();
+
+    let transfer = CanisterBuilder::new("transfer")
+        .with_wasm_env("TRANSFER_WASM_PATH")
+        .as_coverage()
+        .build();
+
+    let state = FuzzerBuilder::new()
+        .name("trap_after_await")
+        .with_canister(ledger)
+        .with_canister(transfer)
+        .build();
+
+    let mut fuzzer_state = TrapAfterAwaitFuzzer(state);
 
     fuzzer_state.run();
 }
@@ -44,6 +44,9 @@ struct TrapAfterAwaitFuzzer(FuzzerState);
 impl FuzzerStateProvider for TrapAfterAwaitFuzzer {
     fn get_fuzzer_state(&self) -> &FuzzerState {
         &self.0
+    }
+    fn get_fuzzer_state_mut(&mut self) -> &mut FuzzerState {
+        &mut self.0
     }
 }
 

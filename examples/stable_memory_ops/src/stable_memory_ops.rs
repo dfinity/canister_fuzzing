@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use slog::Level;
 
-use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
 use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
@@ -16,15 +16,17 @@ use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
 static SNAPSHOT_ID: OnceCell<Vec<u8>> = OnceCell::new();
 
 fn main() {
-    let mut fuzzer_state = StableMemoryFuzzer(FuzzerState::new(
-        "stable_memory_ops",
-        vec![CanisterInfo {
-            id: None,
-            name: "stable_memory".to_string(),
-            wasm_path: WasmPath::EnvVar("STABLE_MEMORY_WASM_PATH".to_string()),
-            ty: CanisterType::Coverage,
-        }],
-    ));
+    let canister = CanisterBuilder::new("stable_memory")
+        .with_wasm_env("STABLE_MEMORY_WASM_PATH")
+        .as_coverage()
+        .build();
+
+    let state = FuzzerBuilder::new()
+        .name("stable_memory_ops")
+        .with_canister(canister)
+        .build();
+
+    let mut fuzzer_state = StableMemoryFuzzer(state);
 
     fuzzer_state.run();
 }
@@ -34,6 +36,9 @@ struct StableMemoryFuzzer(FuzzerState);
 impl FuzzerStateProvider for StableMemoryFuzzer {
     fn get_fuzzer_state(&self) -> &FuzzerState {
         &self.0
+    }
+    fn get_fuzzer_state_mut(&mut self) -> &mut FuzzerState {
+        &mut self.0
     }
 }
 
