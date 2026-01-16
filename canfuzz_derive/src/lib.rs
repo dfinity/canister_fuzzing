@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
 #[proc_macro_derive(FuzzerState)]
 pub fn derive_fuzzer_state(input: TokenStream) -> TokenStream {
@@ -17,14 +17,14 @@ pub fn derive_fuzzer_state(input: TokenStream) -> TokenStream {
     };
 
     let field_access = match fields {
-        Fields::Unnamed(ref fields) => {
+        Fields::Unnamed(fields) => {
             if fields.unnamed.len() == 1 {
                 quote! { 0 }
             } else {
                 return syn::Error::new_spanned(name, "FuzzerState derive currently only supports newtype structs (tuple structs with one field)").to_compile_error().into();
             }
         }
-        Fields::Named(ref fields) => {
+        Fields::Named(fields) => {
             let state_field = fields
                 .named
                 .iter()
