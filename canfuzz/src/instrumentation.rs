@@ -504,8 +504,7 @@ fn is_memory64(module: &Module<'_>) -> bool {
         .unwrap()
         .get_type_id();
     let ty = module.types.get(type_id).unwrap();
-    let api_uses_i64 = ty.params().iter().all(|v| matches!(v, DataType::I64));
-    return api_uses_i64;
+    ty.params().iter().all(|v| matches!(v, DataType::I64))
 }
 
 /// Validates the instrumented Wasm module.

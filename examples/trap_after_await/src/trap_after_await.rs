@@ -8,44 +8,41 @@ use once_cell::sync::OnceCell;
 use pocket_ic::PocketIcBuilder;
 use slog::Level;
 
+use canfuzz::FuzzerState;
 use canfuzz::custom::mutator::candid::CandidTypeDefArgs;
-use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
-use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
+
+use canfuzz::orchestrator::FuzzerOrchestrator;
 use canfuzz::util::read_canister_bytes;
 
 const SYNCHRONOUS_EXECUTION: bool = false;
 static SNAPSHOT: OnceCell<(Vec<u8>, Vec<u8>)> = OnceCell::new();
 
 fn main() {
-    let mut fuzzer_state = TrapAfterAwaitFuzzer(FuzzerState::new(
-        "trap_after_await",
-        vec![
-            CanisterInfo {
-                id: None,
-                name: "ledger".to_string(),
-                wasm_path: WasmPath::EnvVar("LEDGER_WASM_PATH".to_string()),
-                ty: CanisterType::Support,
-            },
-            CanisterInfo {
-                id: None,
-                name: "transfer".to_string(),
-                wasm_path: WasmPath::EnvVar("TRANSFER_WASM_PATH".to_string()),
-                ty: CanisterType::Coverage,
-            },
-        ],
-    ));
+    let ledger = CanisterBuilder::new("ledger")
+        .with_wasm_env("LEDGER_WASM_PATH")
+        .as_support()
+        .build();
+
+    let transfer = CanisterBuilder::new("transfer")
+        .with_wasm_env("TRANSFER_WASM_PATH")
+        .as_coverage()
+        .build();
+
+    let state = FuzzerBuilder::new()
+        .name("trap_after_await")
+        .with_canister(ledger)
+        .with_canister(transfer)
+        .build();
+
+    let mut fuzzer_state = TrapAfterAwaitFuzzer(state);
 
     fuzzer_state.run();
 }
 
+#[derive(FuzzerState)]
 struct TrapAfterAwaitFuzzer(FuzzerState);
-
-impl FuzzerStateProvider for TrapAfterAwaitFuzzer {
-    fn get_fuzzer_state(&self) -> &FuzzerState {
-        &self.0
-    }
-}
 
 impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     fn get_candid_args() -> Option<CandidTypeDefArgs> {
@@ -78,19 +75,25 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
             .with_log_level(Level::Critical)
             .build();
 
-        self.0.init_state(test);
+        self.as_mut().init_state(test);
         let test = self.get_state_machine();
 
         let ledger_canister_id = test.create_canister();
         test.add_cycles(ledger_canister_id, u128::MAX / 2);
-        let module = read_canister_bytes(self.0.get_canister_wasm_path_by_name("ledger").clone());
+        let module = read_canister_bytes(
+            self.as_ref()
+                .get_canister_wasm_path_by_name("ledger")
+                .clone(),
+        );
         test.install_canister(ledger_canister_id, module, vec![], None);
 
         let main_canister_id = test.create_canister();
         test.add_cycles(main_canister_id, u128::MAX / 2);
         let module = instrument_wasm_for_fuzzing(InstrumentationArgs {
             wasm_bytes: read_canister_bytes(
-                self.0.get_canister_wasm_path_by_name("transfer").clone(),
+                self.as_ref()
+                    .get_canister_wasm_path_by_name("transfer")
+                    .clone(),
             ),
             history_size: 8,
             seed: Seed::Random,
@@ -103,7 +106,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
         );
 
         let canisters = [ledger_canister_id, main_canister_id];
-        for (info, id) in self.0.get_iter_mut_canister_info().zip(canisters) {
+        for (info, id) in self.as_mut().get_iter_mut_canister_info().zip(canisters) {
             info.id = Some(id)
         }
 
@@ -165,7 +168,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     fn setup(&self) {
         let test = self.get_state_machine();
         let main_canister_id = self.get_coverage_canister_id();
-        let ledger_canister_id = self.0.get_canister_id_by_name("ledger");
+        let ledger_canister_id = self.as_ref().get_canister_id_by_name("ledger");
         let (s1, s2) = SNAPSHOT.get().unwrap();
         test.load_canister_snapshot(main_canister_id, None, s1.to_vec())
             .unwrap();
@@ -175,7 +178,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
 
     fn execute(&self, input: ValueInput<Vec<u8>>) -> ExitKind {
         let test = self.get_state_machine();
-        let ledger_canister_id = self.0.get_canister_id_by_name("ledger");
+        let ledger_canister_id = self.as_ref().get_canister_id_by_name("ledger");
 
         let trap: Vec<u8> = input.into();
         // Initialize payload from bytes

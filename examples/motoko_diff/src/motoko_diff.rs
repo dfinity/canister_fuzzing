@@ -14,31 +14,29 @@ use std::time::Duration;
 
 use slog::Level;
 
-use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
+use canfuzz::FuzzerState;
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
-use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
+use canfuzz::orchestrator::FuzzerOrchestrator;
 use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 fn main() {
-    let mut fuzzer_state = MotokoDiffFuzzer(FuzzerState::new(
-        "motoko_diff",
-        vec![CanisterInfo {
-            id: None,
-            name: "ecdsa_sign".to_string(),
-            wasm_path: WasmPath::EnvVar("MOTOKO_CANISTER_WASM_PATH".to_string()),
-            ty: CanisterType::Coverage,
-        }],
-    ));
+    let canister = CanisterBuilder::new("ecdsa_sign")
+        .with_wasm_env("MOTOKO_CANISTER_WASM_PATH")
+        .as_coverage()
+        .build();
+
+    let state = FuzzerBuilder::new()
+        .name("motoko_diff")
+        .with_canister(canister)
+        .build();
+
+    let mut fuzzer_state = MotokoDiffFuzzer(state);
     fuzzer_state.run();
 }
 
+#[derive(FuzzerState)]
 struct MotokoDiffFuzzer(FuzzerState);
-
-impl FuzzerStateProvider for MotokoDiffFuzzer {
-    fn get_fuzzer_state(&self) -> &FuzzerState {
-        &self.0
-    }
-}
 
 impl FuzzerOrchestrator for MotokoDiffFuzzer {
     fn corpus_dir(&self) -> std::path::PathBuf {
@@ -55,10 +53,10 @@ impl FuzzerOrchestrator for MotokoDiffFuzzer {
             .with_application_subnet()
             .with_log_level(Level::Critical)
             .build();
-        self.0.init_state(test);
+        self.as_mut().init_state(test);
         let test = self.get_state_machine();
 
-        for info in self.0.get_iter_mut_canister_info() {
+        for info in self.as_mut().get_iter_mut_canister_info() {
             let canister_id = test.create_canister();
             test.add_cycles(canister_id, u128::MAX / 2);
             let module = instrument_wasm_for_fuzzing(InstrumentationArgs {

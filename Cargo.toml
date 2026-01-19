@@ -3,6 +3,7 @@
 members = [
     "build_canister",
     "canfuzz",
+    "canfuzz_derive",
     "canisters/rust/decode_candid",
     "canisters/rust/ledger",
     "canisters/rust/stable_memory",
@@ -50,6 +51,9 @@ ic-dummy-getrandom-for-wasm = "0.1.0"
 num-traits = "0.2"
 num-bigint = "0.4"
 naughty-strings = "0.2.4"
+quote = "1.0"
+syn = "2.0"
+proc-macro2 = "1.0"
 
 # pinned deps
 libafl = { version = "=0.15.4", features = ["std"] }

@@ -14,7 +14,7 @@ path = "src/trap_after_await.rs"
 
 [dependencies]
 candid = { workspace = true }
-canfuzz = { path = "../../canfuzz/" }
+canfuzz = { path = "../../canfuzz/", features = ["derive"] }
 once_cell = { workspace = true }
 pocket-ic = { workspace = true }
 serde = { workspace = true }

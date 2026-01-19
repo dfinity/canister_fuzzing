@@ -11,25 +11,32 @@
 //! fuzzing campaign.
 //!
 //! ```no_run
-//! use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
-//! use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
+//! use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState, WasmPath};
+//! use canfuzz::orchestrator::FuzzerOrchestrator;
 //! use canfuzz::libafl::executors::ExitKind;
 //! use canfuzz::libafl::inputs::BytesInput;
 //! use std::path::PathBuf;
 //!
-//! // 1. Define a struct for your fuzzer.
+//! // 1. Define a struct for your fuzzer and derive FuzzerState.
+//! // Note: Requires the "derive" feature enabled for canfuzz.
+//! #[cfg_attr(feature = "derive", derive(canfuzz::FuzzerState))]
 //! struct MyFuzzer(FuzzerState);
 //!
-//! // 2. Provide access to the fuzzer state.
-//! impl FuzzerStateProvider for MyFuzzer {
-//!     fn get_fuzzer_state(&self) -> &FuzzerState { &self.0 }
+//! // Manual implementation if "derive" feature is not used:
+//! #[cfg(not(feature = "derive"))]
+//! impl AsRef<FuzzerState> for MyFuzzer {
+//!     fn as_ref(&self) -> &FuzzerState { &self.0 }
+//! }
+//! #[cfg(not(feature = "derive"))]
+//! impl AsMut<FuzzerState> for MyFuzzer {
+//!     fn as_mut(&mut self) -> &mut FuzzerState { &mut self.0 }
 //! }
 //!
-//! // 3. Implement the fuzzing logic.
+//! // 2. Implement the fuzzing logic.
 //! impl FuzzerOrchestrator for MyFuzzer {
 //!     fn init(&mut self) {
-//!         // Setup PocketIc and install canisters.
-//!         println!("Canisters installed");
+//!         // Setup PocketIc and install canisters automatically.
+//!         self.as_mut().setup_canisters();
 //!     }
 //!
 //!     fn corpus_dir(&self) -> PathBuf {
@@ -46,18 +53,17 @@
 //!
 //! // 4. Set up and run the fuzzer.
 //! fn main() {
-//!     let mut fuzzer = MyFuzzer(FuzzerState::new(
-//!         "my_fuzzer",
-//!         vec![
-//!             CanisterInfo {
-//!                 id: None,
-//!                 name: "my_target_canister".to_string(),
-//!                 wasm_path: WasmPath::Path("./my_canister.wasm".into()),
-//!                 ty: CanisterType::Coverage,
-//!             },
-//!         ],
-//!     ));
+//!     let canister = CanisterBuilder::new("my_target_canister")
+//!         .with_wasm_path("./my_canister.wasm")
+//!         .as_coverage()
+//!         .build();
 //!
+//!     let state = FuzzerBuilder::new()
+//!         .name("my_fuzzer")
+//!         .with_canister(canister)
+//!         .build();
+//!
+//!     let mut fuzzer = MyFuzzer(state);
 //!     fuzzer.run();
 //! }
 //! ```
@@ -75,3 +81,6 @@ pub mod custom;
 // re-export libAFL and libAFL_bolts
 pub use libafl;
 pub use libafl_bolts;
+
+#[cfg(feature = "derive")]
+pub use canfuzz_derive::FuzzerState;

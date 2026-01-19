@@ -8,28 +8,25 @@ To build a fuzzer, one must implement the `FuzzerOrchestrator` trait. This invol
 
 ```rust
 // my_fuzzer/src/main.rs
-use canfuzz::fuzzer::{CanisterInfo, CanisterType, FuzzerState, WasmPath};
-use canfuzz::orchestrator::{FuzzerOrchestrator, FuzzerStateProvider};
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState, WasmPath};
+use canfuzz::orchestrator::FuzzerOrchestrator;
 use canfuzz::util::parse_canister_result_for_trap;
 use canfuzz::libafl::executors::ExitKind;
 use canfuzz::libafl::inputs::BytesInput;
 use candid::Principal;
 
-// 1. Define a struct for the fuzzer state
+// 1. Define a struct for the fuzzer state and derive FuzzerState
+// Requires features = ["derive"] in Cargo.toml
+#[derive(canfuzz::FuzzerState)]
 struct MyFuzzer(FuzzerState);
 
-// 2. Implement the trait to provide access to the state
-impl FuzzerStateProvider for MyFuzzer {
-    fn get_fuzzer_state(&self) -> &FuzzerState { &self.0 }
-}
-
-// 3. Implement the core fuzzing logic
+// 2. Implement the core fuzzing logic
 impl FuzzerOrchestrator for MyFuzzer {
     /// Sets up the IC environment and installs canisters.
     fn init(&mut self) {
-        // A helper that initializes PocketIc and installs canisters.
-        // Canister are expected to be instrumented here.
-        self.default_init(); 
+        // A helper that automatically initializes PocketIc and installs canisters.
+        // Canisters are expected to be instrumented here.
+        self.as_mut().setup_canisters();
     }
 
     /// Executes one test case with a given input.
@@ -59,19 +56,20 @@ impl FuzzerOrchestrator for MyFuzzer {
 fn main() {
     // Define the canisters for the test environment.
     // The `Coverage` canister will be instrumented automatically.
-    let canisters = vec![
-        CanisterInfo {
-            name: "my_target_canister".to_string(),
-            ty: CanisterType::Coverage,
-            // Specify the path to your pre-compiled Wasm.
-            // For complex builds, you can use a build.rs and WasmPath::EnvVar.
-            wasm_path: WasmPath::Path("path/to/your/canister.wasm".to_string()),
-            id: None,
-        },
-        // Add any other supporting canisters here.
-    ];
+    
+    // For complex builds, you can use a build.rs and .with_wasm_env()
+    let target = CanisterBuilder::new("my_target_canister")
+        .with_wasm_path("path/to/your/canister.wasm")
+        .as_coverage()
+        .build();
 
-    let mut fuzzer = MyFuzzer(FuzzerState::new("my_fuzzer", canisters));
+    let state = FuzzerBuilder::new()
+        .name("my_fuzzer")
+        .with_canister(target)
+        // .with_canister(other_canister)
+        .build();
+
+    let mut fuzzer = MyFuzzer(state);
     fuzzer.run();
 }
 ```
