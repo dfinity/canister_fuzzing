@@ -259,7 +259,7 @@ dependencies = [
 
 [[package]]
 name = "build_canister"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "bumpalo"
@@ -348,7 +348,7 @@ dependencies = [
 
 [[package]]
 name = "canfuzz"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "canfuzz_derive"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -635,7 +635,7 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "decode_candid"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "candid",
  "candid_parser",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "decode_candid_by_instructions"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "build_canister",
  "candid",
@@ -1697,7 +1697,7 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "ledger"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "candid",
  "candid_parser",
@@ -1964,7 +1964,7 @@ dependencies = [
 
 [[package]]
 name = "motoko_diff"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "build_canister",
  "candid",
@@ -1977,7 +1977,7 @@ dependencies = [
 
 [[package]]
 name = "motoko_shim"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "build_canister",
  "candid",
@@ -3074,7 +3074,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stable_memory"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "arbitrary",
  "candid",
@@ -3090,7 +3090,7 @@ dependencies = [
 
 [[package]]
 name = "stable_memory_ops"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "build_canister",
  "candid",
@@ -3573,7 +3573,7 @@ dependencies = [
 
 [[package]]
 name = "transfer"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "candid",
  "candid_parser",
@@ -3585,7 +3585,7 @@ dependencies = [
 
 [[package]]
 name = "trap_after_await"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "build_canister",
  "candid",
