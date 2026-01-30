@@ -17,20 +17,8 @@
 //! use canfuzz::libafl::inputs::BytesInput;
 //! use std::path::PathBuf;
 //!
-//! // 1. Define a struct for your fuzzer and derive FuzzerState.
-//! // Note: Requires the "derive" feature enabled for canfuzz.
-//! #[cfg_attr(feature = "derive", derive(canfuzz::FuzzerState))]
-//! struct MyFuzzer(FuzzerState);
-//!
-//! // Manual implementation if "derive" feature is not used:
-//! #[cfg(not(feature = "derive"))]
-//! impl AsRef<FuzzerState> for MyFuzzer {
-//!     fn as_ref(&self) -> &FuzzerState { &self.0 }
-//! }
-//! #[cfg(not(feature = "derive"))]
-//! impl AsMut<FuzzerState> for MyFuzzer {
-//!     fn as_mut(&mut self) -> &mut FuzzerState { &mut self.0 }
-//! }
+//! // 1. Define a struct for your fuzzer using the macro.
+//! canfuzz::define_fuzzer_state!(MyFuzzer);
 //!
 //! // 2. Implement the fuzzing logic.
 //! impl FuzzerOrchestrator for MyFuzzer {
@@ -82,5 +70,21 @@ pub mod custom;
 pub use libafl;
 pub use libafl_bolts;
 
-#[cfg(feature = "derive")]
-pub use canfuzz_derive::FuzzerState;
+#[macro_export]
+macro_rules! define_fuzzer_state {
+    ($name:ident) => {
+        pub struct $name(pub canfuzz::fuzzer::FuzzerState);
+
+        impl AsRef<canfuzz::fuzzer::FuzzerState> for $name {
+            fn as_ref(&self) -> &canfuzz::fuzzer::FuzzerState {
+                &self.0
+            }
+        }
+
+        impl AsMut<canfuzz::fuzzer::FuzzerState> for $name {
+            fn as_mut(&mut self) -> &mut canfuzz::fuzzer::FuzzerState {
+                &mut self.0
+            }
+        }
+    };
+}

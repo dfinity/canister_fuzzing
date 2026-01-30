@@ -3,7 +3,6 @@
 members = [
     "build_canister",
     "canfuzz",
-    "canfuzz_derive",
     "canisters/rust/decode_candid",
     "canisters/rust/ledger",
     "canisters/rust/stable_memory",

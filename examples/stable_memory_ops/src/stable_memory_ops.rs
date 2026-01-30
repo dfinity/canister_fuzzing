@@ -1,5 +1,6 @@
 use candid::Principal;
 use canfuzz::custom::mutator::candid::CandidTypeDefArgs;
+use canfuzz::define_fuzzer_state;
 use canfuzz::libafl::executors::ExitKind;
 use canfuzz::libafl::inputs::ValueInput;
 use once_cell::sync::OnceCell;
@@ -8,13 +9,13 @@ use std::path::PathBuf;
 
 use slog::Level;
 
-use canfuzz::FuzzerState;
-use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::FuzzerOrchestrator;
 use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
 
 static SNAPSHOT_ID: OnceCell<Vec<u8>> = OnceCell::new();
+define_fuzzer_state!(StableMemoryFuzzer);
 
 fn main() {
     let canister = CanisterBuilder::new("stable_memory")
@@ -31,9 +32,6 @@ fn main() {
 
     fuzzer_state.run();
 }
-
-#[derive(FuzzerState)]
-struct StableMemoryFuzzer(FuzzerState);
 
 impl FuzzerOrchestrator for StableMemoryFuzzer {
     fn get_candid_args() -> Option<CandidTypeDefArgs> {

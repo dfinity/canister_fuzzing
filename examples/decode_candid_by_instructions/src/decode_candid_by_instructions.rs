@@ -1,7 +1,7 @@
-use canfuzz::FuzzerState;
 use canfuzz::custom::feedback::oom_exit_kind::OomLogic;
 use canfuzz::custom::observer::decode_map::{DECODING_MAP_OBSERVER_NAME, DecodingMapFeedback, MAP};
-use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
+use canfuzz::define_fuzzer_state;
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::FuzzerOrchestrator;
 use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
@@ -39,6 +39,8 @@ use canfuzz::libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use canfuzz::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
+define_fuzzer_state!(DecodeCandidFuzzer);
+
 fn main() {
     let canister = CanisterBuilder::new("decode_candid")
         .with_wasm_env("DECODE_CANDID_WASM_PATH")
@@ -54,9 +56,6 @@ fn main() {
 
     fuzzer_state.run();
 }
-
-#[derive(FuzzerState)]
-struct DecodeCandidFuzzer(FuzzerState);
 
 impl FuzzerOrchestrator for DecodeCandidFuzzer {
     fn corpus_dir(&self) -> std::path::PathBuf {
