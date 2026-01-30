@@ -15,10 +15,8 @@ use canfuzz::libafl::executors::ExitKind;
 use canfuzz::libafl::inputs::BytesInput;
 use candid::Principal;
 
-// 1. Define a struct for the fuzzer state and derive FuzzerState
-// Requires features = ["derive"] in Cargo.toml
-#[derive(canfuzz::FuzzerState)]
-struct MyFuzzer(FuzzerState);
+// 1. Define a struct for the fuzzer state using the macro
+canfuzz::define_fuzzer_state!(MyFuzzer);
 
 // 2. Implement the core fuzzing logic
 impl FuzzerOrchestrator for MyFuzzer {

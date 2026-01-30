@@ -1,4 +1,5 @@
 use candid::{Decode, Encode, Principal};
+use canfuzz::define_fuzzer_state;
 use canfuzz::libafl::executors::ExitKind;
 use canfuzz::libafl::inputs::ValueInput;
 use k256::U256;
@@ -14,11 +15,12 @@ use std::time::Duration;
 
 use slog::Level;
 
-use canfuzz::FuzzerState;
-use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 use canfuzz::orchestrator::FuzzerOrchestrator;
 use canfuzz::util::{parse_canister_result_for_trap, read_canister_bytes};
+
+define_fuzzer_state!(MotokoDiffFuzzer);
 
 fn main() {
     let canister = CanisterBuilder::new("ecdsa_sign")
@@ -34,9 +36,6 @@ fn main() {
     let mut fuzzer_state = MotokoDiffFuzzer(state);
     fuzzer_state.run();
 }
-
-#[derive(FuzzerState)]
-struct MotokoDiffFuzzer(FuzzerState);
 
 impl FuzzerOrchestrator for MotokoDiffFuzzer {
     fn corpus_dir(&self) -> std::path::PathBuf {

@@ -30,11 +30,6 @@ wirm = { workspace = true }
 num-traits = { workspace = true }
 num-bigint = { workspace = true }
 naughty-strings = { workspace =  true }
-canfuzz_derive = { path = "../canfuzz_derive", optional = true }
-
-[features]
-default = []
-derive = ["dep:canfuzz_derive"]
 
 [dev-dependencies]
 wat = { workspace = true }

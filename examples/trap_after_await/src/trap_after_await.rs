@@ -2,15 +2,15 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use candid::{Decode, Encode, Principal};
+use canfuzz::define_fuzzer_state;
 use canfuzz::libafl::executors::ExitKind;
 use canfuzz::libafl::inputs::ValueInput;
 use once_cell::sync::OnceCell;
 use pocket_ic::PocketIcBuilder;
 use slog::Level;
 
-use canfuzz::FuzzerState;
 use canfuzz::custom::mutator::candid::CandidTypeDefArgs;
-use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder, FuzzerState};
+use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
 
 use canfuzz::orchestrator::FuzzerOrchestrator;
@@ -18,6 +18,7 @@ use canfuzz::util::read_canister_bytes;
 
 const SYNCHRONOUS_EXECUTION: bool = false;
 static SNAPSHOT: OnceCell<(Vec<u8>, Vec<u8>)> = OnceCell::new();
+define_fuzzer_state!(TrapAfterAwaitFuzzer);
 
 fn main() {
     let ledger = CanisterBuilder::new("ledger")
@@ -40,9 +41,6 @@ fn main() {
 
     fuzzer_state.run();
 }
-
-#[derive(FuzzerState)]
-struct TrapAfterAwaitFuzzer(FuzzerState);
 
 impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
     fn get_candid_args() -> Option<CandidTypeDefArgs> {
