@@ -14,3 +14,8 @@ pub const API_VERSION_IC0: &str = "ic0";
 /// The name of the function exported by an instrumented canister to expose its coverage map.
 /// The fuzzer orchestrator calls this function to retrieve coverage data.
 pub const COVERAGE_FN_EXPORT_NAME: &str = "__export_coverage_for_afl";
+
+/// The name of the function exported by an instrumented canister to expose its instruction count.
+/// The fuzzer orchestrator calls this function to retrieve the instruction count
+/// from the last canister_update/canister_query execution.
+pub const INSTRUCTION_COUNT_FN_EXPORT_NAME: &str = "__export_instruction_count_for_afl";

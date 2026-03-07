@@ -1,9 +1,14 @@
 //! This module orchestrates the fuzzing process using the `libafl` fuzzing framework.
 //!
-//! It defines the `FuzzerOrchestrator` trait, which provides a generic interface
-//! for setting up and running fuzz tests against IC canisters. The main `run` function
-//! configures and starts the `libafl` fuzzing loop, while the `test_one_input` function
-//! provides a convenient way to debug specific inputs.
+//! It defines the [`FuzzerOrchestrator`] trait, which provides a generic interface
+//! for setting up and running fuzz tests against IC canisters. The main [`FuzzerOrchestrator::run`]
+//! function configures and starts the `libafl` fuzzing loop, while
+//! [`FuzzerOrchestrator::test_one_input`] provides a convenient way to debug specific inputs.
+//!
+//! When [`FuzzerOrchestrator::enable_instruction_maximization`] returns `true`, the fuzzer
+//! additionally tracks instruction counts via [`set_instruction_count`](FuzzerOrchestrator::set_instruction_count)
+//! and uses [`InstructionCountFeedback`](crate::custom::feedback::instruction_count::InstructionCountFeedback)
+//! to guide inputs toward higher instruction consumption.
 
 use candid::Principal;
 use chrono::Local;
@@ -37,7 +42,8 @@ use crate::libafl::monitors::SimpleMonitor;
 // use libafl::monitors::tui::{ui::TuiUI, TuiMonitor};
 use crate::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 
-use crate::constants::COVERAGE_FN_EXPORT_NAME;
+use crate::constants::{COVERAGE_FN_EXPORT_NAME, INSTRUCTION_COUNT_FN_EXPORT_NAME};
+use crate::custom::observer::instruction_count::INSTRUCTION_MAP;
 use crate::fuzzer::FuzzerState;
 
 /// A trait that defines the necessary components for a canister fuzzing target.
@@ -160,14 +166,54 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
         None
     }
 
+    /// Returns whether instruction maximization feedback should be enabled.
+    ///
+    /// When true, the fuzzer will track instruction counts from the instrumented canister
+    /// and consider inputs that increase the maximum instruction count as "interesting".
+    /// Requires `instrument_instruction_count: true` in `InstrumentationArgs`.
+    fn enable_instruction_maximization() -> bool {
+        false
+    }
+
+    /// Fetches the instruction count from the instrumented canister and updates the global `INSTRUCTION_MAP`.
+    ///
+    /// It makes an update call to the `__export_instruction_count_for_afl` function on the coverage canister.
+    /// If the instruction count exceeds the previous maximum, the input is marked as interesting.
+    #[allow(static_mut_refs)]
+    fn set_instruction_count(&self) {
+        let test = self.get_state_machine();
+        let result = test.update_call(
+            self.get_coverage_canister_id(),
+            Principal::anonymous(),
+            INSTRUCTION_COUNT_FN_EXPORT_NAME,
+            vec![],
+        );
+        if let Ok(result) = result
+            && result.len() >= 8
+        {
+            let instructions = u64::from_le_bytes(result[0..8].try_into().unwrap());
+            let mut map = unsafe { INSTRUCTION_MAP.borrow_mut() };
+            if instructions > map.max_instructions {
+                map.increased = true;
+                map.max_instructions = instructions;
+            } else {
+                map.increased = false;
+            }
+            map.current_instructions = instructions;
+        }
+    }
+
     /// The main entry point for running a fuzzing campaign.
     ///
     /// This function orchestrates the entire fuzzing process:
     /// 1. Calls `self.init()` for one-time setup.
-    /// 2. Defines a `harness` closure that wraps `self.execute()` and updates the coverage map.
+    /// 2. Defines a `harness` closure that wraps `self.execute()` and updates the coverage map
+    ///    (and optionally the instruction count).
     /// 3. Sets up `libafl` components:
     ///    - A `HitcountsMapObserver` to monitor the `COVERAGE_MAP`.
     ///    - `AflMapFeedback` for coverage-guided feedback and `CrashFeedback` for finding crashes.
+    ///    - Optionally, `InstructionCountObserver` and `InstructionCountFeedback` when
+    ///      [`enable_instruction_maximization`](Self::enable_instruction_maximization) is `true`.
     ///    - A `StdState` to hold the fuzzer's state (corpus, solutions, etc.).
     ///    - A `SimpleEventManager` with a `SimpleMonitor` for logging.
     ///    - A `QueueScheduler` to decide which input to fuzz next.
@@ -175,14 +221,19 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
     /// 4. Loads the initial seed corpus from the directory provided by `corpus_dir()`.
     /// 5. Configures mutational stages, including a `HavocScheduledMutator`.
     /// 6. Starts the main fuzzing loop.
+    #[allow(static_mut_refs)]
     fn run(&mut self) {
         self.init();
 
-        // The harness is a closure that `libafl` will call for each fuzzed input.
+        let enable_instructions = Self::enable_instruction_maximization();
+
         let mut harness = |input: &BytesInput| {
             self.setup();
             let result = self.execute(input.clone());
             self.set_coverage_map();
+            if enable_instructions {
+                self.set_instruction_count();
+            }
             result
         };
 
@@ -190,80 +241,43 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
             StdMapObserver::new("coverage_map", self.get_coverage_map())
         });
 
-        // Feedback mechanisms tell the fuzzer if an input is "interesting"
+        // AflMapFeedback must be created before the observer is moved into a tuple.
         let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
-        let mut feedback = afl_map_feedback.clone();
-        let calibration_stage = CalibrationStage::new(&feedback);
 
-        // The objective is to find crashes, timeouts or oom
-        let crash_feedback = CrashFeedback::new();
-        let timeout_feedback = TimeoutFeedback::new();
-        let oom_feedback: ExitKindFeedback<OomLogic> = ExitKindFeedback::new();
-        let mut objective = feedback_or!(crash_feedback, timeout_feedback, oom_feedback);
+        // The observer/feedback types differ at compile time depending on whether
+        // instruction maximization is enabled, so we branch into the macro here.
+        if enable_instructions {
+            use crate::custom::feedback::instruction_count::InstructionCountFeedback;
+            use crate::custom::observer::instruction_count::INSTRUCTION_COUNT_OBSERVER_NAME;
+            use crate::libafl::observers::RefCellValueObserver;
+            use crate::libafl_bolts::ownedref::OwnedRef;
+            use std::ptr::addr_of;
 
-        // A stats stage to print statistics about the fuzzing run.
-        let stats_stage = AflStatsStage::builder()
-            .map_feedback(&afl_map_feedback)
-            .build()
-            .unwrap();
-
-        let mut state = StdState::new(
-            StdRand::with_seed(current_nanos()),
-            CachedOnDiskCorpus::new(self.input_dir(), 512).unwrap(),
-            CachedOnDiskCorpus::new(self.crashes_dir(), 512).unwrap(),
-            &mut feedback,
-            &mut objective,
-        )
-        .unwrap();
-
-        let mon = SimpleMonitor::new(|s| println!("{s}"));
-        // A TUI monitor can be used for a more sophisticated display.
-        // Example:
-        // let ui = TuiUI::with_version(String::from("My Fuzzer"), String::from("0.1.0"), false);
-        // let mon = TuiMonitor::new(ui);
-        let mut mgr = SimpleEventManager::new(mon);
-        let scheduler = QueueScheduler::new();
-        let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
-
-        let mut executor = InProcessExecutor::new(
-            &mut harness,
-            tuple_list!(hitcount_map_observer),
-            &mut fuzzer,
-            &mut state,
-            &mut mgr,
-        )
-        .expect("Failed to create the Executor");
-
-        // Load initial inputs from the corpus directory
-        let paths = fs::read_dir(self.corpus_dir()).unwrap();
-        for path in paths {
-            let p = path.unwrap().path();
-            let mut f = File::open(p.clone()).unwrap();
-            let mut buffer = Vec::new();
-            f.read_to_end(&mut buffer).unwrap();
-            fuzzer
-                .evaluate_input(
-                    &mut state,
-                    &mut executor,
-                    &mut mgr,
-                    &BytesInput::new(buffer),
+            let instruction_count_observer = unsafe {
+                RefCellValueObserver::new(
+                    INSTRUCTION_COUNT_OBSERVER_NAME,
+                    OwnedRef::from_ptr(addr_of!(INSTRUCTION_MAP)),
                 )
-                .unwrap();
+            };
+
+            let feedback = feedback_or!(InstructionCountFeedback::new(), afl_map_feedback.clone());
+            run_fuzzing_loop!(
+                self,
+                &mut harness,
+                tuple_list!(hitcount_map_observer, instruction_count_observer),
+                afl_map_feedback,
+                feedback
+            );
+        } else {
+            let feedback = afl_map_feedback.clone();
+            run_fuzzing_loop!(
+                self,
+                &mut harness,
+                tuple_list!(hitcount_map_observer),
+                afl_map_feedback,
+                feedback
+            );
         }
-
-        // Standard mutational stage with a havoc mutator
-        let mutator = HavocScheduledMutator::new(havoc_mutations());
-        let mut stages = tuple_list!(
-            calibration_stage,
-            StdMutationalStage::transforming(CandidParserMutator::new(Self::get_candid_args())),
-            StdMutationalStage::transforming(mutator),
-            stats_stage
-        );
-
-        // Start the fuzzing loop!
-        fuzzer
-            .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
-            .expect("Error in the fuzzing loop");
     }
 
     /// Executes a single input against the orchestrator's harness.
@@ -282,3 +296,77 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
         println!("Execution result: {result:?}");
     }
 }
+
+/// Internal macro to avoid duplicating the fuzzing loop for different observer/feedback
+/// type tuples. The observer tuple and feedback composition differ depending on whether
+/// instruction maximization is enabled, but the rest of the loop (state, executor,
+/// corpus loading, stages) is identical.
+///
+/// `$afl_map_feedback` must be an already-constructed `AflMapFeedback` (created from
+/// the hitcount observer before the observer is moved into the tuple).
+macro_rules! run_fuzzing_loop {
+    ($self:expr, $harness:expr, $observers:expr, $afl_map_feedback:expr, $feedback:expr) => {{
+        let afl_map_feedback = $afl_map_feedback;
+        let mut feedback = $feedback;
+        let calibration_stage = CalibrationStage::new(&afl_map_feedback);
+
+        let crash_feedback = CrashFeedback::new();
+        let timeout_feedback = TimeoutFeedback::new();
+        let oom_feedback: ExitKindFeedback<OomLogic> = ExitKindFeedback::new();
+        let mut objective = feedback_or!(crash_feedback, timeout_feedback, oom_feedback);
+
+        let stats_stage = AflStatsStage::builder()
+            .map_feedback(&afl_map_feedback)
+            .build()
+            .unwrap();
+
+        let mut state = StdState::new(
+            StdRand::with_seed(current_nanos()),
+            CachedOnDiskCorpus::new($self.input_dir(), 512).unwrap(),
+            CachedOnDiskCorpus::new($self.crashes_dir(), 512).unwrap(),
+            &mut feedback,
+            &mut objective,
+        )
+        .unwrap();
+
+        let mon = SimpleMonitor::new(|s| println!("{s}"));
+        let mut mgr = SimpleEventManager::new(mon);
+        let scheduler = QueueScheduler::new();
+        let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
+
+        let mut executor =
+            InProcessExecutor::new($harness, $observers, &mut fuzzer, &mut state, &mut mgr)
+                .expect("Failed to create the Executor");
+
+        // Load initial inputs from the corpus directory
+        let paths = fs::read_dir($self.corpus_dir()).unwrap();
+        for path in paths {
+            let p = path.unwrap().path();
+            let mut f = File::open(p.clone()).unwrap();
+            let mut buffer = Vec::new();
+            f.read_to_end(&mut buffer).unwrap();
+            fuzzer
+                .evaluate_input(
+                    &mut state,
+                    &mut executor,
+                    &mut mgr,
+                    &BytesInput::new(buffer),
+                )
+                .unwrap();
+        }
+
+        let mutator = HavocScheduledMutator::new(havoc_mutations());
+        let mut stages = tuple_list!(
+            calibration_stage,
+            StdMutationalStage::transforming(CandidParserMutator::new(Self::get_candid_args())),
+            StdMutationalStage::transforming(mutator),
+            stats_stage
+        );
+
+        fuzzer
+            .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
+            .expect("Error in the fuzzing loop");
+    }};
+}
+// Required for the macro to be usable within trait methods above.
+use run_fuzzing_loop;

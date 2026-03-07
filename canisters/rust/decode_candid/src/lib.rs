@@ -1,3 +1,8 @@
+/// Decodes arbitrary bytes as Candid IDL arguments.
+///
+/// This canister is a fuzzing target — it accepts raw bytes and attempts to decode them
+/// using `candid_parser`. Instruction counting is handled automatically by the fuzzing
+/// framework's wasm instrumentation (no manual `performance_counter` calls needed).
 #[unsafe(export_name = "canister_update decode")]
 pub fn decode() {
     let mut decoding_config = candid_parser::DecoderConfig::new();
@@ -5,7 +10,5 @@ pub fn decode() {
     decoding_config.set_skipping_quota(10_000);
     let bytes = ic_cdk::api::msg_arg_data();
     let _b = candid_parser::IDLArgs::from_bytes_with_config(&bytes, &decoding_config);
-    let instructions = ic_cdk::api::performance_counter(0);
-    let encoded_bytes = candid::encode_one(instructions).unwrap();
-    ic_cdk::api::msg_reply(encoded_bytes);
+    ic_cdk::api::msg_reply(vec![]);
 }

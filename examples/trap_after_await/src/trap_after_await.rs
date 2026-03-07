@@ -95,6 +95,7 @@ impl FuzzerOrchestrator for TrapAfterAwaitFuzzer {
             ),
             history_size: 8,
             seed: Seed::Random,
+            instrument_instruction_count: false,
         });
         test.install_canister(
             main_canister_id,

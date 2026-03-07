@@ -1,5 +1,8 @@
+// Candid decoding fuzzing target.
+// Accepts a Blob and attempts to decode it as an HttpResponse.
+// Instruction counting is handled automatically by the fuzzing
+// framework's wasm instrumentation — no manual performance counter calls needed.
 import Blob "mo:base/Blob";
-import IC "mo:base/ExperimentalInternetComputer";
 
 persistent actor CandidParser {
 
@@ -36,11 +39,8 @@ persistent actor CandidParser {
   };
   public type StreamingToken = {};
 
-  public func parse_candid(bytes : Blob) : async Nat64 {
-    let c1 = IC.performanceCounter(0);
+  public func parse_candid(bytes : Blob) : async () {
     let _response : ?HttpResponse = from_candid (bytes);
-    let c2 = IC.performanceCounter(0) - c1;
-    return c2;
   };
 
 };

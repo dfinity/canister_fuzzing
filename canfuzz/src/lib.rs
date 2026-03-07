@@ -56,6 +56,16 @@
 //! }
 //! ```
 //!
+//! ## Instruction Count Maximization
+//!
+//! To maximize the number of IC instructions consumed by a canister method, enable
+//! instruction counting during wasm instrumentation and override
+//! [`FuzzerOrchestrator::enable_instruction_maximization`](orchestrator::FuzzerOrchestrator::enable_instruction_maximization)
+//! to return `true`. No changes to the target canister source code are required — the
+//! framework automatically wraps exported methods to read `ic0.performance_counter`.
+//!
+//! See the `decode_candid_by_instructions` example for a complete demonstration.
+//!
 //! For a complete example, see the `examples/` directory in the project repository.
 pub mod fuzzer;
 pub mod instrumentation;

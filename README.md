@@ -107,7 +107,7 @@ When a crash is found, the input is saved to the `artifacts/.../crashes/` direct
 
     fn main() {
         // ... (fuzzer and canister setup from above)
-        let mut fuzzer = MyFuzzer(FuzzerState::new("my_fuzzer", canisters));
+        let mut fuzzer = MyFuzzer(state);
 
         // fuzzer.run(); // Comment out the main fuzzing loop
 
@@ -132,6 +132,7 @@ The canister fuzzing framework integrates two main components:
     *   **Coverage Map**: A global array, known as the "coverage map" or "edges map," is added to the Wasm module's memory. This map is shared between the instrumented code and the fuzzer's feedback mechanism. Each entry in the map corresponds to a specific code block or branch in the original program.
     *   **Tracking Execution**: The injected code snippets are simple: they update the coverage map whenever they are executed. For example, a hit counter for a specific code block is incremented. This allows the fuzzer to know which parts of the canister were executed for a given input.
     *   **Exporting Coverage Data**: Since the canister runs in the sandboxed `pocket-ic` environment, a special update method (e.g., `__export_coverage_for_afl`) is added to the Wasm module. After each test case, the fuzzer calls this method to retrieve the coverage map from the canister's memory. This data is then passed to `libafl` to guide the next round of mutations.
+    *   **Instruction Count Instrumentation** *(optional)*: When `instrument_instruction_count: true` is set in `InstrumentationArgs`, the framework also injects wrapper functions around each `canister_update`/`canister_query` export. These wrappers read `ic0.performance_counter` after the original method returns, subtract the estimated AFL instrumentation overhead, and store the result. A separate export function (`__export_instruction_count_for_afl`) allows the fuzzer to retrieve the instruction count. Combined with `enable_instruction_maximization() -> true` in `FuzzerOrchestrator`, this guides the fuzzer toward inputs that consume the most IC instructions — without any changes to the target canister's source code. See the `decode_candid_by_instructions` example.
 
 ## License
 

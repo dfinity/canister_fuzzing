@@ -1,69 +1,59 @@
+//! Feedback for instruction count maximization.
+//!
+//! [`InstructionCountFeedback`] marks an input as "interesting" when it increases the
+//! maximum observed instruction count, guiding the fuzzer toward inputs that consume
+//! more IC instructions.
+
+use crate::custom::observer::instruction_count::{
+    INSTRUCTION_COUNT_OBSERVER_NAME, InstructionCountObserver,
+};
+use crate::libafl::executors::ExitKind;
 use crate::libafl::feedbacks::{Feedback, StateInitializer};
 use crate::libafl::state::HasExecutions;
 use crate::libafl::{Error, HasNamedMetadata};
-use crate::libafl::{executors::ExitKind, observers::value::RefCellValueObserver};
-use serde::Deserialize;
 use serde::Serialize;
 use std::borrow::Cow;
-use std::cell::RefCell;
 
 use crate::libafl_bolts::Named;
 use crate::libafl_bolts::tuples::MatchNameRef;
 use crate::libafl_bolts::tuples::{Handle, MatchName};
 
-// Struct to store the fuzzing output
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-pub struct DecodeMap {
-    pub previous_ratio: u64,
-    pub increased: bool,
-}
-
-// Store
-pub static mut MAP: RefCell<DecodeMap> = RefCell::new(DecodeMap {
-    previous_ratio: 0u64,
-    increased: false,
-});
-
-// Observer
-pub type DecodingMapObserver<'a> = RefCellValueObserver<'a, DecodeMap>;
-pub const DECODING_MAP_OBSERVER_NAME: &str = "DecodingMapObserver";
-
-// Feedback
+/// A libafl feedback that considers an input interesting when it achieves a new maximum
+/// instruction count, as reported by the [`InstructionCountObserver`].
 #[derive(Serialize, Clone, Debug)]
-pub struct DecodingMapFeedback<'a> {
-    handle: Handle<DecodingMapObserver<'a>>,
+pub struct InstructionCountFeedback<'a> {
+    handle: Handle<InstructionCountObserver<'a>>,
 }
 
-impl DecodingMapFeedback<'_> {
+impl InstructionCountFeedback<'_> {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            // Handled leaks lifetime of RefCellObserver
-            handle: Handle::new(Cow::Borrowed(DECODING_MAP_OBSERVER_NAME)),
+            handle: Handle::new(Cow::Borrowed(INSTRUCTION_COUNT_OBSERVER_NAME)),
         }
     }
 }
 
-impl Default for DecodingMapFeedback<'_> {
+impl Default for InstructionCountFeedback<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Named for DecodingMapFeedback<'_> {
+impl Named for InstructionCountFeedback<'_> {
     #[inline]
     fn name(&self) -> &Cow<'static, str> {
         self.handle.name()
     }
 }
 
-impl<S> StateInitializer<S> for DecodingMapFeedback<'_> {
+impl<S> StateInitializer<S> for InstructionCountFeedback<'_> {
     fn init_state(&mut self, _state: &mut S) -> Result<(), Error> {
         Ok(())
     }
 }
 
-impl<EM, I, OT, S> Feedback<EM, I, OT, S> for DecodingMapFeedback<'_>
+impl<EM, I, OT, S> Feedback<EM, I, OT, S> for InstructionCountFeedback<'_>
 where
     S: HasNamedMetadata + HasExecutions,
     OT: MatchName,
@@ -77,7 +67,7 @@ where
         observers: &OT,
         _exit_kind: &ExitKind,
     ) -> Result<bool, Error> {
-        let observer: &DecodingMapObserver = observers.get(&self.handle).unwrap();
+        let observer: &InstructionCountObserver = observers.get(&self.handle).unwrap();
         Ok(observer.get_ref().increased)
     }
 
