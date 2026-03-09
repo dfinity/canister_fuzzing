@@ -119,20 +119,19 @@ When a crash is found, the input is saved to the `artifacts/.../crashes/` direct
 
 ## How It Works
 
-The canister fuzzing framework integrates two main components:
+The framework connects three components:
 
-*   **`libafl` (Fuzzing Engine)**: At its core, the framework uses `libafl`, a state-of-the-art fuzzing library. `libafl` is responsible for the main fuzzing loop, which includes:
-    *   Generating and mutating inputs.
-    *   Executing test cases with the generated inputs.
-    *   Collecting code coverage feedback to guide future mutations.
-    *   Managing the corpus of interesting inputs and reporting crashes.
+1. **`pocket-ic` (IC Emulator)** — Runs canisters locally in-process. The fuzzer installs instrumented Wasm into `pocket-ic` and makes canister calls for each test input.
 
-*   **Wasm Instrumentation**: To enable coverage-guided fuzzing, the target canister's Wasm module is automatically instrumented before being deployed. This process modifies the Wasm to provide execution feedback to `libafl`.
-    *   **Instrumentation Pass**: The framework uses a Wasm-to-Wasm transformation pass. This pass analyzes the canister's code and injects small snippets of code at various points (typically at every basic block or edge).
-    *   **Coverage Map**: A global array, known as the "coverage map" or "edges map," is added to the Wasm module's memory. This map is shared between the instrumented code and the fuzzer's feedback mechanism. Each entry in the map corresponds to a specific code block or branch in the original program.
-    *   **Tracking Execution**: The injected code snippets are simple: they update the coverage map whenever they are executed. For example, a hit counter for a specific code block is incremented. This allows the fuzzer to know which parts of the canister were executed for a given input.
-    *   **Exporting Coverage Data**: Since the canister runs in the sandboxed `pocket-ic` environment, a special update method (e.g., `__export_coverage_for_afl`) is added to the Wasm module. After each test case, the fuzzer calls this method to retrieve the coverage map from the canister's memory. This data is then passed to `libafl` to guide the next round of mutations.
-    *   **Instruction Count Instrumentation** *(optional)*: When `instrument_instruction_count: true` is set in `InstrumentationArgs`, the framework also injects wrapper functions around each `canister_update`/`canister_query` export. These wrappers read `ic0.performance_counter` after the original method returns, subtract the estimated AFL instrumentation overhead, and store the result. A separate export function (`__export_instruction_count_for_afl`) allows the fuzzer to retrieve the instruction count. Combined with `enable_instruction_maximization() -> true` in `FuzzerOrchestrator`, this guides the fuzzer toward inputs that consume the most IC instructions — without any changes to the target canister's source code. See the `decode_candid_by_instructions` example.
+2. **Wasm Instrumentation** — Before deployment, the target canister's Wasm module is transformed to provide execution feedback:
+
+   * **Branch coverage**: An AFL-style instrumentation pass injects code at every basic block and branch. Each instrumentation point updates a shared coverage map using XOR-based edge hashing with a configurable history size.
+
+   * **Coverage export**: A special method (`__export_coverage_for_afl`) is added to the Wasm module so the fuzzer can retrieve the coverage map after each execution.
+
+   * **Instruction count maximization** *(optional)*: When `instrument_instruction_count: true` is set, wrapper functions are injected around each `canister_update`/`canister_query` export. The wrappers read `ic0.performance_counter` after the original method returns and subtract the estimated AFL instrumentation overhead. A separate export (`__export_instruction_count_for_afl`) lets the fuzzer retrieve the count. Combined with `instruction_config()` returning `InstructionConfig { enabled: true, .. }` in `FuzzerOrchestrator`, this guides the fuzzer toward inputs that consume the most IC instructions — no changes to the target canister's source code required. See the `decode_candid_by_instructions` example.
+
+3. **`libafl` (Fuzzing Engine)** — Drives the main loop: generating inputs, executing them via `pocket-ic`, collecting coverage (and optionally instruction count) feedback, and managing the corpus. The framework also includes a **Candid-aware mutator** that can parse `.did` files and perform structure-aware mutations on Candid-encoded inputs.
 
 ## License
 

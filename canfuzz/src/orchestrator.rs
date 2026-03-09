@@ -5,10 +5,12 @@
 //! function configures and starts the `libafl` fuzzing loop, while
 //! [`FuzzerOrchestrator::test_one_input`] provides a convenient way to debug specific inputs.
 //!
-//! When [`FuzzerOrchestrator::enable_instruction_maximization`] returns `true`, the fuzzer
-//! additionally tracks instruction counts via [`set_instruction_count`](FuzzerOrchestrator::set_instruction_count)
-//! and uses [`InstructionCountFeedback`](crate::custom::feedback::instruction_count::InstructionCountFeedback)
-//! to guide inputs toward higher instruction consumption.
+//! When [`FuzzerOrchestrator::instruction_config`] returns an [`InstructionConfig`] with
+//! `enabled: true`, the fuzzer additionally tracks instruction counts via
+//! [`set_instruction_count`](FuzzerOrchestrator::set_instruction_count) and uses
+//! [`InstructionCountFeedback`](crate::custom::feedback::instruction_count::InstructionCountFeedback)
+//! to guide inputs toward higher instruction consumption. Setting `debug: true` prints
+//! the new maximum to stdout each time the record is broken.
 
 use candid::Principal;
 use chrono::Local;
@@ -45,6 +47,19 @@ use crate::libafl_bolts::{current_nanos, rands::StdRand, tuples::tuple_list};
 use crate::constants::{COVERAGE_FN_EXPORT_NAME, INSTRUCTION_COUNT_FN_EXPORT_NAME};
 use crate::custom::observer::instruction_count::INSTRUCTION_MAP;
 use crate::fuzzer::FuzzerState;
+
+/// Configuration for instruction count maximization.
+///
+/// Returned by [`FuzzerOrchestrator::instruction_config`]. When `enabled` is true,
+/// the fuzzer tracks instruction counts and considers inputs that increase the maximum
+/// as "interesting".
+#[derive(Debug, Clone, Default)]
+pub struct InstructionConfig {
+    /// Enable instruction count maximization feedback.
+    pub enabled: bool,
+    /// Print the new maximum instruction count to stdout each time the record is broken.
+    pub debug: bool,
+}
 
 /// A trait that defines the necessary components for a canister fuzzing target.
 ///
@@ -166,13 +181,13 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
         None
     }
 
-    /// Returns whether instruction maximization feedback should be enabled.
+    /// Returns configuration for instruction count maximization.
     ///
-    /// When true, the fuzzer will track instruction counts from the instrumented canister
-    /// and consider inputs that increase the maximum instruction count as "interesting".
+    /// Override this to return an [`InstructionConfig`] with `enabled: true` to track
+    /// instruction counts and guide the fuzzer toward inputs that consume more IC instructions.
     /// Requires `instrument_instruction_count: true` in `InstrumentationArgs`.
-    fn enable_instruction_maximization() -> bool {
-        false
+    fn instruction_config() -> InstructionConfig {
+        InstructionConfig::default()
     }
 
     /// Fetches the instruction count from the instrumented canister and updates the global `INSTRUCTION_MAP`.
@@ -196,6 +211,9 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
             if instructions > map.max_instructions {
                 map.increased = true;
                 map.max_instructions = instructions;
+                if Self::instruction_config().debug {
+                    println!("[instructions] new max: {instructions}");
+                }
             } else {
                 map.increased = false;
             }
@@ -213,7 +231,7 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
     ///    - A `HitcountsMapObserver` to monitor the `COVERAGE_MAP`.
     ///    - `AflMapFeedback` for coverage-guided feedback and `CrashFeedback` for finding crashes.
     ///    - Optionally, `InstructionCountObserver` and `InstructionCountFeedback` when
-    ///      [`enable_instruction_maximization`](Self::enable_instruction_maximization) is `true`.
+    ///      [`instruction_config`](Self::instruction_config) has `enabled: true`.
     ///    - A `StdState` to hold the fuzzer's state (corpus, solutions, etc.).
     ///    - A `SimpleEventManager` with a `SimpleMonitor` for logging.
     ///    - A `QueueScheduler` to decide which input to fuzz next.
@@ -225,13 +243,13 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
     fn run(&mut self) {
         self.init();
 
-        let enable_instructions = Self::enable_instruction_maximization();
+        let inst_config = Self::instruction_config();
 
         let mut harness = |input: &BytesInput| {
             self.setup();
             let result = self.execute(input.clone());
             self.set_coverage_map();
-            if enable_instructions {
+            if inst_config.enabled {
                 self.set_instruction_count();
             }
             result
@@ -246,7 +264,7 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
 
         // The observer/feedback types differ at compile time depending on whether
         // instruction maximization is enabled, so we branch into the macro here.
-        if enable_instructions {
+        if inst_config.enabled {
             use crate::custom::feedback::instruction_count::InstructionCountFeedback;
             use crate::custom::observer::instruction_count::INSTRUCTION_COUNT_OBSERVER_NAME;
             use crate::libafl::observers::RefCellValueObserver;
@@ -297,13 +315,14 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
     }
 }
 
-/// Internal macro to avoid duplicating the fuzzing loop for different observer/feedback
+/// Macro to avoid duplicating the fuzzing loop for different observer/feedback
 /// type tuples. The observer tuple and feedback composition differ depending on whether
 /// instruction maximization is enabled, but the rest of the loop (state, executor,
 /// corpus loading, stages) is identical.
 ///
 /// `$afl_map_feedback` must be an already-constructed `AflMapFeedback` (created from
 /// the hitcount observer before the observer is moved into the tuple).
+#[macro_export]
 macro_rules! run_fuzzing_loop {
     ($self:expr, $harness:expr, $observers:expr, $afl_map_feedback:expr, $feedback:expr) => {{
         let afl_map_feedback = $afl_map_feedback;

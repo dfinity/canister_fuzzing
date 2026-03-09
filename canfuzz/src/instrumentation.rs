@@ -142,20 +142,20 @@ fn instrument_for_afl(
     instrumentation_args: &InstrumentationArgs,
 ) -> Result<()> {
     let is_memory64 = is_memory64(module);
+    let inst_count = instrumentation_args.instrument_instruction_count;
 
     // Ensure all ic0 imports upfront, before adding any local functions.
     // This is important because wirm's get_func returns import-list position,
     // which only matches the FunctionID before local functions shift indices.
-    let (msg_reply_data_append_idx, msg_reply_idx) = ensure_ic0_imports(module, is_memory64)?;
+    let (msg_reply_data_append_idx, msg_reply_idx, perf_counter_idx) =
+        ensure_ic0_imports(module, is_memory64, inst_count)?;
 
-    let perf_counter_idx = if instrumentation_args.instrument_instruction_count {
-        Some(ensure_performance_counter_import(module)?)
-    } else {
-        None
-    };
-
-    let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-        inject_globals(module, instrumentation_args.history_size, is_memory64);
+    let (afl_prev_loc_indices, afl_mem_ptr_idx, instruction_count_globals) = inject_globals(
+        module,
+        instrumentation_args.history_size,
+        is_memory64,
+        inst_count,
+    );
     println!(
         "  -> Injected globals: prev_locs @ indices {afl_prev_loc_indices:?}, mem_ptr @ index {afl_mem_ptr_idx:?}"
     );
@@ -170,12 +170,12 @@ fn instrument_for_afl(
     )?;
     println!("  -> Injected `canister_update __export_coverage_for_afl` function.");
 
-    // Instruction count globals and wrapper functions (injected before branch instrumentation)
+    // Instruction count wrapper functions (injected before branch instrumentation)
     let mut skip_function_ids = HashSet::new();
 
-    let instruction_count_global = if instrumentation_args.instrument_instruction_count {
+    let call_count_global = if let Some((ic_global, call_count_global)) = instruction_count_globals
+    {
         let perf_counter_idx = perf_counter_idx.unwrap();
-        let (ic_global, call_count_global) = inject_instruction_count_globals(module);
         println!(
             "  -> Injected instruction count globals: ic @ {ic_global:?}, call_count @ {call_count_global:?}"
         );
@@ -223,7 +223,7 @@ fn instrument_for_afl(
         instrumentation_args.seed,
         is_memory64,
         &skip_function_ids,
-        instruction_count_global,
+        call_count_global,
     );
     println!("  -> Instrumented branch instructions in all functions.");
 
@@ -232,15 +232,20 @@ fn instrument_for_afl(
 
 /// Injects the necessary global variables for AFL instrumentation.
 ///
+/// **Always injected:**
 /// - `__afl_prev_loc_N`: A set of `history_size` mutable i32 (or i64 for wasm64) globals to store the IDs
-///   of the previously executed basic blocks. This is used to track execution history
-///   in the control flow graph.
+///   of the previously executed basic blocks.
 /// - `__afl_mem_ptr`: An immutable i32 (or i64 for wasm64) global that holds the base address (0) of the coverage map.
+///
+/// **When `instrument_instruction_count` is true, also injects:**
+/// - `__afl_instruction_count`: mutable i64 global storing the instruction count after method execution.
+/// - `__afl_instrumentation_call_count`: mutable i64 global counting AFL helper function invocations per execution.
 fn inject_globals(
     module: &mut Module<'_>,
     history_size: usize,
     is_memory64: bool,
-) -> (Vec<GlobalID>, GlobalID) {
+    instrument_instruction_count: bool,
+) -> (Vec<GlobalID>, GlobalID, Option<(GlobalID, GlobalID)>) {
     let mut afl_prev_loc_indices = Vec::with_capacity(history_size);
 
     let (ptr_type, init_val) = if is_memory64 {
@@ -264,7 +269,30 @@ fn inject_globals(
         false,
         false,
     );
-    (afl_prev_loc_indices, afl_mem_ptr_idx)
+
+    let instruction_count_globals = if instrument_instruction_count {
+        let instruction_count_global = module.add_global(
+            InitExpr::new(vec![InitInstr::Value(Value::I64(0))]),
+            DataType::I64,
+            true,
+            false,
+        );
+        let call_count_global = module.add_global(
+            InitExpr::new(vec![InitInstr::Value(Value::I64(0))]),
+            DataType::I64,
+            true,
+            false,
+        );
+        Some((instruction_count_global, call_count_global))
+    } else {
+        None
+    };
+
+    (
+        afl_prev_loc_indices,
+        afl_mem_ptr_idx,
+        instruction_count_globals,
+    )
 }
 
 /// Injects the `canister_update `[COVERAGE_FN_EXPORT_NAME]` function.
@@ -544,46 +572,6 @@ fn afl_instrumentation_slice(
     }
 }
 
-/// Injects two i64 globals for instruction counting:
-/// - `__afl_instruction_count`: stores the instruction count after method execution
-/// - `__afl_instrumentation_call_count`: counts AFL helper function invocations per execution
-fn inject_instruction_count_globals(module: &mut Module<'_>) -> (GlobalID, GlobalID) {
-    let instruction_count_global = module.add_global(
-        InitExpr::new(vec![InitInstr::Value(Value::I64(0))]),
-        DataType::I64,
-        true,
-        false,
-    );
-    let call_count_global = module.add_global(
-        InitExpr::new(vec![InitInstr::Value(Value::I64(0))]),
-        DataType::I64,
-        true,
-        false,
-    );
-    (instruction_count_global, call_count_global)
-}
-
-/// Ensures that `ic0.performance_counter` is imported.
-/// The signature is always `(i32) -> (i64)` regardless of wasm32/64.
-fn ensure_performance_counter_import(module: &mut Module<'_>) -> Result<FunctionID> {
-    let existing = module.imports.get_func(
-        API_VERSION_IC0.to_string(),
-        "performance_counter".to_string(),
-    );
-    if let Some(idx) = existing {
-        return Ok(idx);
-    }
-    let type_id = module
-        .types
-        .add_func_type(&[DataType::I32], &[DataType::I64]);
-    let (func_index, _) = module.add_import_func(
-        API_VERSION_IC0.to_string(),
-        "performance_counter".to_string(),
-        type_id,
-    );
-    Ok(func_index)
-}
-
 /// Computes the estimated IC instruction cost per AFL instrumentation call site.
 ///
 /// Each instrumentation point consists of a **call site** (inlined at the branch)
@@ -649,15 +637,21 @@ fn compute_cost_per_afl_call(history_size: usize) -> i64 {
 /// by performance_counter but are not part of the original canister method or AFL
 /// instrumentation, so they must be subtracted separately.
 ///
+/// System API calls have an additional overhead beyond the wasm `call` opcode cost.
+/// The overhead is charged via `charge_for_cpu()` *before* the counter is read, so the
+/// value returned by `performance_counter` already includes it. See
+/// `rs/embedders/src/wasmtime_embedder/system_api_complexity.rs` in the IC repo for
+/// the full list of overhead constants.
+///
 /// ```text
-/// i64.const(0)          ;; 1   — reset call counter
+/// i64.const(0)          ;; 1     — reset call counter
 /// global.set            ;; 1
-/// call original_method  ;; 5   — the call opcode itself (not the method body)
-/// i32.const(1)          ;; 1   — perf counter type arg
-/// call perf_counter     ;; 5   — reads counter here
-/// Total                 = 13
+/// call original_method  ;; 5     — call opcode (local function, no system API overhead)
+/// i32.const(1)          ;; 1     — perf counter type arg
+/// call perf_counter     ;; 205   — call opcode (5) + system API overhead (200)
+/// Total                 = 213Th
 /// ```
-const WRAPPER_OVERHEAD_COST: i64 = 13;
+const WRAPPER_OVERHEAD_COST: i64 = 213;
 
 /// Injects wrapper functions around canister_update and canister_query exports.
 ///
@@ -804,14 +798,21 @@ fn inject_instruction_count_export<'a>(
 
 /// Ensures that the necessary `ic0` System API functions are imported.
 ///
-/// The instrumentation requires `ic0.msg_reply_data_append` and `ic0.msg_reply`
-/// for the `export_coverage` function. This function checks if they are already
-/// imported. If not, it adds them to the module's import section.
-/// It returns the function indices for both imports.
+/// **Always imported:**
+/// - `ic0.msg_reply_data_append` — needed by the coverage export function.
+/// - `ic0.msg_reply` — needed by the coverage export function.
+///
+/// **When `instrument_instruction_count` is true, also imports:**
+/// - `ic0.performance_counter : (i32) -> (i64)` — needed by method wrappers.
+///
+/// All imports must be resolved upfront before adding any local functions, because
+/// wirm's `get_func` returns import-list positions that only match function-space IDs
+/// before local functions shift indices.
 fn ensure_ic0_imports(
     module: &mut Module<'_>,
     is_memory64: bool,
-) -> Result<(FunctionID, FunctionID)> {
+    instrument_instruction_count: bool,
+) -> Result<(FunctionID, FunctionID, Option<FunctionID>)> {
     let mut data_append_idx = module.imports.get_func(
         API_VERSION_IC0.to_string(),
         "msg_reply_data_append".to_string(),
@@ -845,7 +846,33 @@ fn ensure_ic0_imports(
         reply_idx = Some(func_index);
     }
 
-    Ok((data_append_idx.unwrap(), reply_idx.unwrap()))
+    let perf_counter_idx = if instrument_instruction_count {
+        let existing = module.imports.get_func(
+            API_VERSION_IC0.to_string(),
+            "performance_counter".to_string(),
+        );
+        if let Some(idx) = existing {
+            Some(idx)
+        } else {
+            let type_id = module
+                .types
+                .add_func_type(&[DataType::I32], &[DataType::I64]);
+            let (func_index, _) = module.add_import_func(
+                API_VERSION_IC0.to_string(),
+                "performance_counter".to_string(),
+                type_id,
+            );
+            Some(func_index)
+        }
+    } else {
+        None
+    };
+
+    Ok((
+        data_append_idx.unwrap(),
+        reply_idx.unwrap(),
+        perf_counter_idx,
+    ))
 }
 
 /// Checks if the module is using 64-bit memory addressing for the purpose of instrumentation.
@@ -921,8 +948,8 @@ mod tests {
         let history_range: [usize; 4] = [1, 2, 4, 8];
         for history_size in history_range {
             let mut module = Module::parse(&wat, false, false).unwrap();
-            let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-                inject_globals(&mut module, history_size, false);
+            let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+                inject_globals(&mut module, history_size, false, false);
 
             assert_eq!(afl_prev_loc_indices.len(), history_size);
             (0..history_size)
@@ -948,8 +975,8 @@ mod tests {
         let history_range: [usize; 4] = [1, 2, 4, 8];
         for history_size in history_range {
             let mut module = Module::parse(&wat, false, false).unwrap();
-            let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-                inject_globals(&mut module, history_size, false);
+            let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+                inject_globals(&mut module, history_size, false, false);
 
             assert_eq!(afl_prev_loc_indices.len(), history_size);
             (0..history_size).for_each(|index| {
@@ -988,8 +1015,8 @@ mod tests {
         let history_range: [usize; 4] = [1, 2, 4, 8];
         for history_size in history_range {
             let mut module = Module::parse(&wat, false, false).unwrap();
-            let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-                inject_globals(&mut module, history_size, false);
+            let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+                inject_globals(&mut module, history_size, false, false);
 
             for g in afl_prev_loc_indices.iter() {
                 let global = module.globals.get_kind(*g);
@@ -1010,7 +1037,8 @@ mod tests {
         .unwrap();
 
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module, false).unwrap();
+        let (data_append_idx, reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
 
         assert_eq!(data_append_idx, FunctionID(0));
         assert_eq!(reply_idx, FunctionID(1));
@@ -1029,7 +1057,8 @@ mod tests {
         .unwrap();
 
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module, false).unwrap();
+        let (data_append_idx, reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
 
         assert_eq!(data_append_idx, FunctionID(1));
         assert_eq!(reply_idx, FunctionID(2));
@@ -1048,7 +1077,8 @@ mod tests {
         .unwrap();
 
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module, false).unwrap();
+        let (data_append_idx, reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
 
         assert_eq!(data_append_idx, FunctionID(0));
         assert_eq!(reply_idx, FunctionID(1));
@@ -1067,7 +1097,8 @@ mod tests {
         .unwrap();
 
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module, false).unwrap();
+        let (data_append_idx, reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
 
         assert_eq!(data_append_idx, FunctionID(1));
         assert_eq!(reply_idx, FunctionID(0));
@@ -1088,7 +1119,8 @@ mod tests {
         .unwrap();
 
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module, false).unwrap();
+        let (data_append_idx, reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
 
         assert_eq!(data_append_idx, FunctionID(0));
         assert_eq!(reply_idx, FunctionID(1));
@@ -1119,8 +1151,8 @@ mod tests {
 
         let history_size = 1;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-            inject_globals(&mut module, history_size, false);
+        let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+            inject_globals(&mut module, history_size, false, false);
         let instrumentation_function = afl_instrumentation_slice(
             &mut module,
             &afl_prev_loc_indices,
@@ -1173,8 +1205,8 @@ mod tests {
 
         let history_size = 2;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-            inject_globals(&mut module, history_size, false);
+        let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+            inject_globals(&mut module, history_size, false, false);
         let instrumentation_function = afl_instrumentation_slice(
             &mut module,
             &afl_prev_loc_indices,
@@ -1234,9 +1266,9 @@ mod tests {
 
         let history_size = 1;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (msg_reply_data_append_idx, msg_reply_idx) =
-            ensure_ic0_imports(&mut module, false).unwrap();
-        let (_, afl_mem_ptr_idx) = inject_globals(&mut module, history_size, false);
+        let (msg_reply_data_append_idx, msg_reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
+        let (_, afl_mem_ptr_idx, _) = inject_globals(&mut module, history_size, false, false);
         let coverage_function = inject_afl_coverage_export(
             &mut module,
             history_size,
@@ -1286,9 +1318,9 @@ mod tests {
 
         let history_size = 2;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (msg_reply_data_append_idx, msg_reply_idx) =
-            ensure_ic0_imports(&mut module, false).unwrap();
-        let (_, afl_mem_ptr_idx) = inject_globals(&mut module, history_size, false);
+        let (msg_reply_data_append_idx, msg_reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
+        let (_, afl_mem_ptr_idx, _) = inject_globals(&mut module, history_size, false, false);
         let coverage_function = inject_afl_coverage_export(
             &mut module,
             history_size,
@@ -1332,8 +1364,8 @@ mod tests {
 
         let history_size = 2;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-            inject_globals(&mut module, history_size, false);
+        let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+            inject_globals(&mut module, history_size, false, false);
         instrument_branches(
             &mut module,
             &afl_prev_loc_indices,
@@ -1599,8 +1631,8 @@ mod tests {
 
         let history_size = 2;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-            inject_globals(&mut module, history_size, false);
+        let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+            inject_globals(&mut module, history_size, false, false);
         instrument_branches(
             &mut module,
             &afl_prev_loc_indices,

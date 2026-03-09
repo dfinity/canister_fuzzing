@@ -6,7 +6,7 @@
 //! `ic0.performance_counter` after each method call. No manual changes to the canister
 //! source code are needed.
 //!
-//! The fuzzer uses `enable_instruction_maximization() -> true` to enable the
+//! The fuzzer overrides `instruction_config()` with `enabled: true` to enable the
 //! [`InstructionCountFeedback`](canfuzz::custom::feedback::instruction_count::InstructionCountFeedback),
 //! which considers inputs that increase the maximum instruction count as "interesting".
 
@@ -98,7 +98,10 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
         status
     }
 
-    fn enable_instruction_maximization() -> bool {
-        true
+    fn instruction_config() -> canfuzz::orchestrator::InstructionConfig {
+        canfuzz::orchestrator::InstructionConfig {
+            enabled: true,
+            debug: true,
+        }
     }
 }
