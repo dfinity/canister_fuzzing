@@ -75,6 +75,7 @@ impl FuzzerOrchestrator for StableMemoryFuzzer {
                 wasm_bytes: read_canister_bytes(info.wasm_path.clone()),
                 history_size: 8,
                 seed: Seed::Random,
+                instrument_instruction_count: false,
             });
             test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);

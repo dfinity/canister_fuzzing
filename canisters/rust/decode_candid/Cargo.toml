@@ -10,7 +10,6 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-candid = { workspace = true }
 candid_parser = { workspace = true }
 ic-cdk = { workspace = true }
 ic-cdk-macros = { workspace = true }

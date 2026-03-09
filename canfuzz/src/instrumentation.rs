@@ -9,6 +9,54 @@
 //!     start of each function and before every branch, effectively covering all basic blocks.
 //! 4.  Exporting a coverage function that allows the fuzzer to retrieve the
 //!     coverage map from the canister.
+//!
+//! ## Instruction Count Instrumentation
+//!
+//! When [`InstrumentationArgs::instrument_instruction_count`] is enabled, the module also
+//! performs instruction-count instrumentation via `ic0.performance_counter`. This allows the
+//! fuzzer to maximize the number of IC instructions consumed by canister methods, without
+//! requiring any changes to the target canister's source code.
+//!
+//! The instruction counting works by:
+//! 1.  Wrapping each `canister_update` / `canister_query` export in a new function that
+//!     reads `ic0.performance_counter(1)` after the original method returns.
+//! 2.  Subtracting the estimated overhead of AFL instrumentation (computed from the IC
+//!     instruction cost model and `history_size`) to isolate the canister's own cost.
+//! 3.  Exporting a [`INSTRUCTION_COUNT_FN_EXPORT_NAME`](crate::constants::INSTRUCTION_COUNT_FN_EXPORT_NAME)
+//!     function that replies with the 8-byte little-endian instruction count.
+//!
+//! ### Limitations
+//!
+//! - **Trapped executions report 0 instructions.** The wrapper function runs *after* the
+//!   original method returns. If execution never reaches that point, the instruction count
+//!   global keeps its previous value (reset to 0 at the start of each wrapper call). Traps
+//!   can originate from several sources:
+//!   - **Explicit traps:** The canister calls `ic0.trap(...)` or `ic_cdk::trap(...)`.
+//!   - **Wasm `unreachable`:** Rust's `panic!`/`unwrap()`/`expect()` compile to
+//!     `unreachable` after printing the panic message via `ic0.trap`.
+//!   - **Implicit wasm traps:** Integer divide-by-zero, integer overflow on `i32.trunc_f64_s`,
+//!     out-of-bounds memory access, out-of-bounds table access, indirect call type mismatch,
+//!     and stack overflow all cause the wasm runtime to trap immediately.
+//!   - **System API traps:** Many `ic0.*` calls can trap on invalid arguments (e.g.,
+//!     `ic0.msg_reply` called twice, `ic0.canister_cycle_balance` in the wrong context,
+//!     `ic0.stable_read` with out-of-bounds offset). The system call never returns and the
+//!     wasm execution is aborted.
+//!   - **Instruction limit exceeded:** The IC halts execution when the per-message instruction
+//!     limit is reached, which behaves identically to a trap.
+//!
+//!   In all of these cases the wrapper never executes, so the instruction count is 0. These
+//!   inputs are still captured by `CrashFeedback` / `TimeoutFeedback` and saved as crashes
+//!   or timeouts.
+//!
+//! - **The AFL overhead discount is approximate.** It assumes fixed IC instruction costs per
+//!   wasm opcode (1 per opcode, 5 for `call`, 200 for `ic0.performance_counter` system API
+//!   overhead). The IC's actual cost model may differ slightly. For fuzzing guidance (relative
+//!   ordering of inputs), approximate is sufficient.
+//!
+//! - **`performance_counter(1)` includes inter-canister call instructions.** If the target
+//!   method makes downstream calls, the counter includes instructions executed in callbacks.
+//!   This is generally desirable (total cost of the message), but means the count is not
+//!   purely the target canister's own instructions.
 
 use anyhow::Result;
 use rand::Rng;
@@ -20,10 +68,14 @@ use wirm::ir::module::module_functions::FuncKind;
 use wirm::ir::types::{InitExpr, Instructions, Value};
 use wirm::module_builder::AddLocal;
 use wirm::opcode::Inject;
-use wirm::wasmparser::{MemArg, Operator, Validator};
+use wirm::wasmparser::{ExternalKind, MemArg, Operator, Validator};
 use wirm::{DataType, InitInstr, Module, Opcode};
 
-use crate::constants::{AFL_COVERAGE_MAP_SIZE, API_VERSION_IC0, COVERAGE_FN_EXPORT_NAME};
+use crate::constants::{
+    AFL_COVERAGE_MAP_SIZE, API_VERSION_IC0, COVERAGE_FN_EXPORT_NAME,
+    INSTRUCTION_COUNT_FN_EXPORT_NAME,
+};
+use std::collections::HashSet;
 
 /// Arguments for configuring the Wasm instrumentation process.
 pub struct InstrumentationArgs {
@@ -33,6 +85,10 @@ pub struct InstrumentationArgs {
     pub history_size: usize,
     /// The seed to use for instrumentation.
     pub seed: Seed,
+    /// Whether to instrument canister_update/canister_query methods to track instruction counts.
+    /// When enabled, wrapper functions are injected that read the IC performance counter
+    /// after each method execution and an export function is added to retrieve the count.
+    pub instrument_instruction_count: bool,
 }
 
 /// Specifies the seed for the random number generator used during instrumentation.
@@ -94,17 +150,35 @@ pub fn instrument_wasm_for_fuzzing(instrumentation_args: InstrumentationArgs) ->
 /// The main orchestration function for applying AFL instrumentation.
 ///
 /// It performs the following steps:
-/// 1. Injects global variables required for tracking coverage.
-/// 2. Injects the `[COVERAGE_FN_EXPORT_NAME]` update function to expose the coverage map.
-/// 3. Instruments all functions by inserting calls to a helper function at the
+/// 1. Resolves all required `ic0` imports upfront (before adding local functions).
+/// 2. Injects global variables required for tracking coverage.
+/// 3. Injects the [`COVERAGE_FN_EXPORT_NAME`] update function to expose the coverage map.
+/// 4. Instruments all functions by inserting calls to a helper function at the
 ///    start of each function and before each branch instruction.
+///
+/// When [`InstrumentationArgs::instrument_instruction_count`] is enabled, it additionally:
+/// 5. Imports `ic0.performance_counter` and injects instruction-counting globals.
+/// 6. Wraps each `canister_update` / `canister_query` export to read the instruction counter.
+/// 7. Injects the [`INSTRUCTION_COUNT_FN_EXPORT_NAME`] export to retrieve the count.
 fn instrument_for_afl(
     module: &mut Module<'_>,
     instrumentation_args: &InstrumentationArgs,
 ) -> Result<()> {
     let is_memory64 = is_memory64(module);
-    let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-        inject_globals(module, instrumentation_args.history_size, is_memory64);
+    let inst_count = instrumentation_args.instrument_instruction_count;
+
+    // Ensure all ic0 imports upfront, before adding any local functions.
+    // This is important because wirm's get_func returns import-list position,
+    // which only matches the FunctionID before local functions shift indices.
+    let (msg_reply_data_append_idx, msg_reply_idx, perf_counter_idx) =
+        ensure_ic0_imports(module, is_memory64, inst_count)?;
+
+    let (afl_prev_loc_indices, afl_mem_ptr_idx, instruction_count_globals) = inject_globals(
+        module,
+        instrumentation_args.history_size,
+        is_memory64,
+        inst_count,
+    );
     println!(
         "  -> Injected globals: prev_locs @ indices {afl_prev_loc_indices:?}, mem_ptr @ index {afl_mem_ptr_idx:?}"
     );
@@ -113,9 +187,57 @@ fn instrument_for_afl(
         module,
         instrumentation_args.history_size,
         afl_mem_ptr_idx,
+        msg_reply_data_append_idx,
+        msg_reply_idx,
         is_memory64,
     )?;
     println!("  -> Injected `canister_update __export_coverage_for_afl` function.");
+
+    // Instruction count wrapper functions (injected before branch instrumentation)
+    let mut skip_function_ids = HashSet::new();
+
+    let call_count_global = if let Some((ic_global, call_count_global)) = instruction_count_globals
+    {
+        let perf_counter_idx = perf_counter_idx.unwrap();
+        println!(
+            "  -> Injected instruction count globals: ic @ {ic_global:?}, call_count @ {call_count_global:?}"
+        );
+        println!("  -> Ensured ic0.performance_counter import @ {perf_counter_idx:?}");
+
+        let cost_per_afl_call = compute_cost_per_afl_call(instrumentation_args.history_size);
+        println!("  -> Computed AFL instrumentation cost per call: {cost_per_afl_call}");
+
+        let wrapper_ids = inject_method_wrappers(
+            module,
+            call_count_global,
+            ic_global,
+            perf_counter_idx,
+            cost_per_afl_call,
+        );
+        for id in &wrapper_ids {
+            skip_function_ids.insert(*id);
+        }
+        println!(
+            "  -> Injected {} method wrapper(s) for instruction counting.",
+            wrapper_ids.len()
+        );
+
+        let export_fn_id = inject_instruction_count_export(
+            module,
+            instrumentation_args.history_size,
+            afl_mem_ptr_idx,
+            ic_global,
+            msg_reply_data_append_idx,
+            msg_reply_idx,
+            is_memory64,
+        )?;
+        skip_function_ids.insert(export_fn_id);
+        println!("  -> Injected `canister_query {INSTRUCTION_COUNT_FN_EXPORT_NAME}` function.");
+
+        Some(call_count_global)
+    } else {
+        None
+    };
 
     instrument_branches(
         module,
@@ -123,6 +245,8 @@ fn instrument_for_afl(
         afl_mem_ptr_idx,
         instrumentation_args.seed,
         is_memory64,
+        &skip_function_ids,
+        call_count_global,
     );
     println!("  -> Instrumented branch instructions in all functions.");
 
@@ -131,15 +255,20 @@ fn instrument_for_afl(
 
 /// Injects the necessary global variables for AFL instrumentation.
 ///
+/// **Always injected:**
 /// - `__afl_prev_loc_N`: A set of `history_size` mutable i32 (or i64 for wasm64) globals to store the IDs
-///   of the previously executed basic blocks. This is used to track execution history
-///   in the control flow graph.
+///   of the previously executed basic blocks.
 /// - `__afl_mem_ptr`: An immutable i32 (or i64 for wasm64) global that holds the base address (0) of the coverage map.
+///
+/// **When `instrument_instruction_count` is true, also injects:**
+/// - `__afl_instruction_count`: mutable i64 global storing the instruction count after method execution.
+/// - `__afl_instrumentation_call_count`: mutable i64 global counting AFL helper function invocations per execution.
 fn inject_globals(
     module: &mut Module<'_>,
     history_size: usize,
     is_memory64: bool,
-) -> (Vec<GlobalID>, GlobalID) {
+    instrument_instruction_count: bool,
+) -> (Vec<GlobalID>, GlobalID, Option<(GlobalID, GlobalID)>) {
     let mut afl_prev_loc_indices = Vec::with_capacity(history_size);
 
     let (ptr_type, init_val) = if is_memory64 {
@@ -163,7 +292,30 @@ fn inject_globals(
         false,
         false,
     );
-    (afl_prev_loc_indices, afl_mem_ptr_idx)
+
+    let instruction_count_globals = if instrument_instruction_count {
+        let instruction_count_global = module.add_global(
+            InitExpr::new(vec![InitInstr::Value(Value::I64(0))]),
+            DataType::I64,
+            true,
+            false,
+        );
+        let call_count_global = module.add_global(
+            InitExpr::new(vec![InitInstr::Value(Value::I64(0))]),
+            DataType::I64,
+            true,
+            false,
+        );
+        Some((instruction_count_global, call_count_global))
+    } else {
+        None
+    };
+
+    (
+        afl_prev_loc_indices,
+        afl_mem_ptr_idx,
+        instruction_count_globals,
+    )
 }
 
 /// Injects the `canister_update `[COVERAGE_FN_EXPORT_NAME]` function.
@@ -176,10 +328,10 @@ fn inject_afl_coverage_export<'a>(
     module: &mut Module<'a>,
     history_size: usize,
     afl_mem_ptr_idx: GlobalID,
+    msg_reply_data_append_idx: FunctionID,
+    msg_reply_idx: FunctionID,
     is_memory64: bool,
 ) -> Result<()> {
-    let (msg_reply_data_append_idx, msg_reply_idx) = ensure_ic0_imports(module, is_memory64)?;
-
     let mut func_builder = FunctionBuilder::new(&[], &[]);
 
     if is_memory64 {
@@ -225,9 +377,16 @@ fn instrument_branches(
     afl_mem_ptr_idx: GlobalID,
     seed: Seed,
     is_memory64: bool,
+    skip_function_ids: &HashSet<FunctionID>,
+    call_count_global: Option<GlobalID>,
 ) {
-    let instrumentation_function =
-        afl_instrumentation_slice(module, afl_prev_loc_indices, afl_mem_ptr_idx, is_memory64);
+    let instrumentation_function = afl_instrumentation_slice(
+        module,
+        afl_prev_loc_indices,
+        afl_mem_ptr_idx,
+        is_memory64,
+        call_count_global,
+    );
 
     let seed = match seed {
         Seed::Random => rand::rng().next_u32(),
@@ -255,8 +414,10 @@ fn instrument_branches(
     };
 
     for (function_index, function) in module.functions.iter_mut().enumerate() {
+        let func_id = FunctionID(function_index as u32);
         if matches!(function.kind(), FuncKind::Local(_))
-            && FunctionID(function_index as u32) != instrumentation_function
+            && func_id != instrumentation_function
+            && !skip_function_ids.contains(&func_id)
         {
             let local_function = function.unwrap_local_mut();
             let mut new_instructions = Vec::with_capacity(local_function.body.num_instructions * 2);
@@ -315,6 +476,7 @@ fn afl_instrumentation_slice(
     afl_prev_loc_indices: &[GlobalID],
     afl_mem_ptr_idx: GlobalID,
     is_memory64: bool,
+    call_count_global: Option<GlobalID>,
 ) -> FunctionID {
     if is_memory64 {
         let mut func_builder = FunctionBuilder::new(&[DataType::I64], &[]);
@@ -365,6 +527,15 @@ fn afl_instrumentation_slice(
             .i64_shr_unsigned()
             .global_set(afl_prev_loc_indices[0]);
 
+        // Increment AFL call counter if instruction counting is enabled
+        if let Some(call_count_idx) = call_count_global {
+            func_builder
+                .global_get(call_count_idx)
+                .i64_const(1)
+                .i64_add()
+                .global_set(call_count_idx);
+        }
+
         func_builder.finish_module(module)
     } else {
         let mut func_builder = FunctionBuilder::new(&[DataType::I32], &[]);
@@ -411,20 +582,261 @@ fn afl_instrumentation_slice(
             .i32_shr_unsigned()
             .global_set(afl_prev_loc_indices[0]);
 
+        // Increment AFL call counter if instruction counting is enabled
+        if let Some(call_count_idx) = call_count_global {
+            func_builder
+                .global_get(call_count_idx)
+                .i64_const(1)
+                .i64_add()
+                .global_set(call_count_idx);
+        }
+
         func_builder.finish_module(module)
     }
 }
 
+/// Computes the estimated IC instruction cost per AFL instrumentation call site.
+///
+/// Each instrumentation point consists of a **call site** (inlined at the branch)
+/// and the **helper function body** (called from the site). The total cost is the
+/// sum of both, assuming IC instruction cost = 1 per wasm opcode except `call` = 5.
+///
+/// ## Call site (2 wasm instructions, IC cost = 6)
+///
+/// ```text
+/// i32/i64.const <random>   ;; cost 1
+/// call $afl_helper          ;; cost 5
+/// ```
+///
+/// ## Helper function body (IC cost = 13 + 6N, where N = history_size)
+///
+/// ```text
+/// ;; XOR block: compute coverage map key          (1 + 2N instructions)
+/// local.get(curr_location)                        ;; 1
+/// N × (global.get(prev_loc[i]) + i32/i64.xor)    ;; 2N
+///
+/// ;; Address computation + load-increment-store   (8 instructions)
+/// global.get(mem_ptr)                             ;; 1
+/// i32/i64.add                                     ;; 1
+/// local.tee(afl_local)                            ;; 1
+/// local.get(afl_local)                            ;; 1
+/// i32/i64.load8_u                                 ;; 1
+/// i32/i64.const(1)                                ;; 1
+/// i32/i64.add                                     ;; 1
+/// i32/i64.store8                                  ;; 1
+///
+/// ;; History shift                                (4N instructions)
+/// (N-1) × (global.get + const(1) + shr_u + global.set)  ;; 4(N-1)
+/// local.get + const(1) + shr_u + global.set              ;; 4
+///
+/// ;; Call counter increment (only when instruction counting is enabled, +4)
+/// global.get(call_count) + i64.const(1) + i64.add + global.set(call_count)
+/// ```
+///
+/// ## Total per instrumentation point
+///
+/// `6 + 13 + 6N + 4 = 23 + 6N` (IC instructions, approximate)
+///
+/// The wasm32 and wasm64 code paths produce the same number of wasm instructions
+/// (just using i32 vs i64 variants), so the instruction count is `23 + 6N` for both.
+///
+/// Note: the IC applies a `WASM64_INSTRUCTION_COST_OVERHEAD` multiplier (currently 2×)
+/// when **charging cycles** for wasm64 execution (see `rs/config/src/subnet_config.rs`
+/// in `dfinity/ic`), but this only affects the cycle fee — it does NOT affect
+/// `ic0.performance_counter`, which reports the raw instruction count without any
+/// multiplier. Therefore the overhead formula is the same for wasm32 and wasm64.
+///
+/// This is an approximation — the IC's actual cost model may assign different
+/// weights to some opcodes. For fuzzing guidance (relative ordering of inputs),
+/// an approximate discount is sufficient.
+fn compute_cost_per_afl_call(history_size: usize) -> i64 {
+    let n = history_size as i64;
+    // call site (6) + body (13 + 6N) + call counter increment (4)
+    23 + 6 * n
+}
+
+/// Fixed IC instruction cost of the wrapper function itself, up to and including the
+/// `call ic0.performance_counter` that reads the counter. These instructions are counted
+/// by performance_counter but are not part of the original canister method or AFL
+/// instrumentation, so they must be subtracted separately.
+///
+/// System API calls have an additional overhead beyond the wasm `call` opcode cost.
+/// The overhead is charged via `charge_for_cpu()` *before* the counter is read, so the
+/// value returned by `performance_counter` already includes it. See
+/// `rs/embedders/src/wasmtime_embedder/system_api_complexity.rs` in the IC repo for
+/// the full list of overhead constants.
+///
+/// ```text
+/// i64.const(0)          ;; 1     — reset call counter
+/// global.set            ;; 1
+/// call original_method  ;; 5     — call opcode (local function, no system API overhead)
+/// i32.const(1)          ;; 1     — perf counter type arg
+/// call perf_counter     ;; 205   — call opcode (5) + system API overhead (200)
+/// Total                 = 213Th
+/// ```
+const WRAPPER_OVERHEAD_COST: i64 = 213;
+
+/// Injects wrapper functions around canister_update and canister_query exports.
+///
+/// Each wrapper resets the AFL call counter, calls the original method, reads the
+/// performance counter, subtracts estimated AFL overhead and its own fixed overhead,
+/// and stores the result.
+fn inject_method_wrappers(
+    module: &mut Module<'_>,
+    call_count_global: GlobalID,
+    instruction_count_global: GlobalID,
+    perf_counter_idx: FunctionID,
+    cost_per_afl_call: i64,
+) -> Vec<FunctionID> {
+    // Collect exports to wrap: (export_index, original_function_id, export_name)
+    let exports_to_wrap: Vec<(usize, FunctionID)> = module
+        .exports
+        .iter()
+        .enumerate()
+        .filter(|(_, exp)| {
+            matches!(exp.kind, ExternalKind::Func)
+                && (exp.name.starts_with("canister_update ")
+                    || exp.name.starts_with("canister_query "))
+                && !exp.name.contains(COVERAGE_FN_EXPORT_NAME)
+                && !exp.name.contains(INSTRUCTION_COUNT_FN_EXPORT_NAME)
+        })
+        .map(|(idx, exp)| (idx, FunctionID(exp.index)))
+        .collect();
+
+    let mut wrapper_ids = Vec::new();
+
+    for (export_idx, original_func_id) in exports_to_wrap {
+        let mut func_builder = FunctionBuilder::new(&[], &[]);
+
+        // Reset AFL call counter
+        func_builder.i64_const(0).global_set(call_count_global);
+
+        // Call the original method
+        func_builder.call(original_func_id);
+
+        // Read instruction counter (type=1: call context counter)
+        func_builder.i32_const(1).call(perf_counter_idx);
+
+        // Subtract AFL instrumentation overhead: call_count * cost_per_call
+        func_builder
+            .global_get(call_count_global)
+            .i64_const(cost_per_afl_call)
+            .i64_mul()
+            .i64_sub();
+
+        // Subtract the fixed overhead of this wrapper itself (instructions counted
+        // before performance_counter returns)
+        func_builder.i64_const(WRAPPER_OVERHEAD_COST).i64_sub();
+
+        // Store result
+        func_builder.global_set(instruction_count_global);
+
+        let wrapper_id = func_builder.finish_module(module);
+        wrapper_ids.push(wrapper_id);
+
+        // Re-point the export to the wrapper
+        // We need to get a mutable reference to the export and change its index
+        for (idx, exp) in module.exports.iter_mut().enumerate() {
+            if idx == export_idx {
+                exp.index = *wrapper_id;
+                break;
+            }
+        }
+    }
+
+    wrapper_ids
+}
+
+/// Injects the `canister_query __export_instruction_count_for_afl` function.
+///
+/// Exported as a query because it only reads the `__afl_instruction_count` global
+/// (set during the preceding update call) and does not modify persistent state.
+/// The scratch memory write is transient and discarded after the query returns.
+fn inject_instruction_count_export<'a>(
+    module: &mut Module<'a>,
+    history_size: usize,
+    afl_mem_ptr_idx: GlobalID,
+    instruction_count_global: GlobalID,
+    msg_reply_data_append_idx: FunctionID,
+    msg_reply_idx: FunctionID,
+    is_memory64: bool,
+) -> Result<FunctionID> {
+    let scratch_offset = AFL_COVERAGE_MAP_SIZE as i64 * history_size as i64;
+
+    let mut func_builder = FunctionBuilder::new(&[], &[]);
+
+    if is_memory64 {
+        // Store instruction count to scratch memory
+        func_builder
+            .global_get(afl_mem_ptr_idx)
+            .i64_const(scratch_offset)
+            .i64_add();
+        func_builder
+            .global_get(instruction_count_global)
+            .i64_store(MemArg {
+                offset: 0,
+                align: 3, // 2^3 = 8 byte alignment for i64
+                memory: 0,
+                max_align: 0,
+            });
+
+        // Reply with 8 bytes from scratch offset
+        func_builder
+            .global_get(afl_mem_ptr_idx)
+            .i64_const(scratch_offset)
+            .i64_add()
+            .i64_const(8)
+            .call(msg_reply_data_append_idx)
+            .call(msg_reply_idx);
+    } else {
+        // Store instruction count to scratch memory
+        func_builder
+            .global_get(afl_mem_ptr_idx)
+            .i32_const(scratch_offset as i32)
+            .i32_add();
+        func_builder
+            .global_get(instruction_count_global)
+            .i64_store(MemArg {
+                offset: 0,
+                align: 3,
+                memory: 0,
+                max_align: 0,
+            });
+
+        // Reply with 8 bytes from scratch offset
+        func_builder
+            .global_get(afl_mem_ptr_idx)
+            .i32_const(scratch_offset as i32)
+            .i32_add()
+            .i32_const(8)
+            .call(msg_reply_data_append_idx)
+            .call(msg_reply_idx);
+    }
+
+    let function_id = func_builder.finish_module(module);
+    let export_name = format!("canister_query {INSTRUCTION_COUNT_FN_EXPORT_NAME}");
+    module.exports.add_export_func(export_name, function_id.0);
+
+    Ok(function_id)
+}
+
 /// Ensures that the necessary `ic0` System API functions are imported.
 ///
-/// The instrumentation requires `ic0.msg_reply_data_append` and `ic0.msg_reply`
-/// for the `export_coverage` function. This function checks if they are already
-/// imported. If not, it adds them to the module's import section.
-/// It returns the function indices for both imports.
+/// **Always imported:**
+/// - `ic0.msg_reply_data_append` — needed by the coverage export function.
+/// - `ic0.msg_reply` — needed by the coverage export function.
+///
+/// **When `instrument_instruction_count` is true, also imports:**
+/// - `ic0.performance_counter : (i32) -> (i64)` — needed by method wrappers.
+///
+/// All imports must be resolved upfront before adding any local functions, because
+/// wirm's `get_func` returns import-list positions that only match function-space IDs
+/// before local functions shift indices.
 fn ensure_ic0_imports(
     module: &mut Module<'_>,
     is_memory64: bool,
-) -> Result<(FunctionID, FunctionID)> {
+    instrument_instruction_count: bool,
+) -> Result<(FunctionID, FunctionID, Option<FunctionID>)> {
     let mut data_append_idx = module.imports.get_func(
         API_VERSION_IC0.to_string(),
         "msg_reply_data_append".to_string(),
@@ -458,7 +870,33 @@ fn ensure_ic0_imports(
         reply_idx = Some(func_index);
     }
 
-    Ok((data_append_idx.unwrap(), reply_idx.unwrap()))
+    let perf_counter_idx = if instrument_instruction_count {
+        let existing = module.imports.get_func(
+            API_VERSION_IC0.to_string(),
+            "performance_counter".to_string(),
+        );
+        if let Some(idx) = existing {
+            Some(idx)
+        } else {
+            let type_id = module
+                .types
+                .add_func_type(&[DataType::I32], &[DataType::I64]);
+            let (func_index, _) = module.add_import_func(
+                API_VERSION_IC0.to_string(),
+                "performance_counter".to_string(),
+                type_id,
+            );
+            Some(func_index)
+        }
+    } else {
+        None
+    };
+
+    Ok((
+        data_append_idx.unwrap(),
+        reply_idx.unwrap(),
+        perf_counter_idx,
+    ))
 }
 
 /// Checks if the module is using 64-bit memory addressing for the purpose of instrumentation.
@@ -534,8 +972,8 @@ mod tests {
         let history_range: [usize; 4] = [1, 2, 4, 8];
         for history_size in history_range {
             let mut module = Module::parse(&wat, false, false).unwrap();
-            let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-                inject_globals(&mut module, history_size, false);
+            let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+                inject_globals(&mut module, history_size, false, false);
 
             assert_eq!(afl_prev_loc_indices.len(), history_size);
             (0..history_size)
@@ -561,8 +999,8 @@ mod tests {
         let history_range: [usize; 4] = [1, 2, 4, 8];
         for history_size in history_range {
             let mut module = Module::parse(&wat, false, false).unwrap();
-            let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-                inject_globals(&mut module, history_size, false);
+            let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+                inject_globals(&mut module, history_size, false, false);
 
             assert_eq!(afl_prev_loc_indices.len(), history_size);
             (0..history_size).for_each(|index| {
@@ -601,8 +1039,8 @@ mod tests {
         let history_range: [usize; 4] = [1, 2, 4, 8];
         for history_size in history_range {
             let mut module = Module::parse(&wat, false, false).unwrap();
-            let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-                inject_globals(&mut module, history_size, false);
+            let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+                inject_globals(&mut module, history_size, false, false);
 
             for g in afl_prev_loc_indices.iter() {
                 let global = module.globals.get_kind(*g);
@@ -623,7 +1061,8 @@ mod tests {
         .unwrap();
 
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module, false).unwrap();
+        let (data_append_idx, reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
 
         assert_eq!(data_append_idx, FunctionID(0));
         assert_eq!(reply_idx, FunctionID(1));
@@ -642,7 +1081,8 @@ mod tests {
         .unwrap();
 
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module, false).unwrap();
+        let (data_append_idx, reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
 
         assert_eq!(data_append_idx, FunctionID(1));
         assert_eq!(reply_idx, FunctionID(2));
@@ -661,7 +1101,8 @@ mod tests {
         .unwrap();
 
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module, false).unwrap();
+        let (data_append_idx, reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
 
         assert_eq!(data_append_idx, FunctionID(0));
         assert_eq!(reply_idx, FunctionID(1));
@@ -680,7 +1121,8 @@ mod tests {
         .unwrap();
 
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module, false).unwrap();
+        let (data_append_idx, reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
 
         assert_eq!(data_append_idx, FunctionID(1));
         assert_eq!(reply_idx, FunctionID(0));
@@ -701,7 +1143,8 @@ mod tests {
         .unwrap();
 
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (data_append_idx, reply_idx) = ensure_ic0_imports(&mut module, false).unwrap();
+        let (data_append_idx, reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
 
         assert_eq!(data_append_idx, FunctionID(0));
         assert_eq!(reply_idx, FunctionID(1));
@@ -732,10 +1175,15 @@ mod tests {
 
         let history_size = 1;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-            inject_globals(&mut module, history_size, false);
-        let instrumentation_function =
-            afl_instrumentation_slice(&mut module, &afl_prev_loc_indices, afl_mem_ptr_idx, false);
+        let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+            inject_globals(&mut module, history_size, false, false);
+        let instrumentation_function = afl_instrumentation_slice(
+            &mut module,
+            &afl_prev_loc_indices,
+            afl_mem_ptr_idx,
+            false,
+            None,
+        );
         assert_eq!(instrumentation_function, FunctionID(0));
         let expected_wasm = wat::parse_str(
             r#"(module
@@ -781,10 +1229,15 @@ mod tests {
 
         let history_size = 2;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-            inject_globals(&mut module, history_size, false);
-        let instrumentation_function =
-            afl_instrumentation_slice(&mut module, &afl_prev_loc_indices, afl_mem_ptr_idx, false);
+        let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+            inject_globals(&mut module, history_size, false, false);
+        let instrumentation_function = afl_instrumentation_slice(
+            &mut module,
+            &afl_prev_loc_indices,
+            afl_mem_ptr_idx,
+            false,
+            None,
+        );
         assert_eq!(instrumentation_function, FunctionID(0));
         let expected_wasm = wat::parse_str(
             r#"(module
@@ -837,9 +1290,17 @@ mod tests {
 
         let history_size = 1;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (_, afl_mem_ptr_idx) = inject_globals(&mut module, history_size, false);
-        let coverage_function =
-            inject_afl_coverage_export(&mut module, history_size, afl_mem_ptr_idx, false);
+        let (msg_reply_data_append_idx, msg_reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
+        let (_, afl_mem_ptr_idx, _) = inject_globals(&mut module, history_size, false, false);
+        let coverage_function = inject_afl_coverage_export(
+            &mut module,
+            history_size,
+            afl_mem_ptr_idx,
+            msg_reply_data_append_idx,
+            msg_reply_idx,
+            false,
+        );
         assert!(coverage_function.is_ok());
         let expected_wasm = wat::parse_str(
             r#"(module
@@ -881,9 +1342,17 @@ mod tests {
 
         let history_size = 2;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (_, afl_mem_ptr_idx) = inject_globals(&mut module, history_size, false);
-        let coverage_function =
-            inject_afl_coverage_export(&mut module, history_size, afl_mem_ptr_idx, false);
+        let (msg_reply_data_append_idx, msg_reply_idx, _) =
+            ensure_ic0_imports(&mut module, false, false).unwrap();
+        let (_, afl_mem_ptr_idx, _) = inject_globals(&mut module, history_size, false, false);
+        let coverage_function = inject_afl_coverage_export(
+            &mut module,
+            history_size,
+            afl_mem_ptr_idx,
+            msg_reply_data_append_idx,
+            msg_reply_idx,
+            false,
+        );
         assert!(coverage_function.is_ok());
         let expected_wasm = wat::parse_str(
             r#"(module
@@ -919,14 +1388,16 @@ mod tests {
 
         let history_size = 2;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-            inject_globals(&mut module, history_size, false);
+        let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+            inject_globals(&mut module, history_size, false, false);
         instrument_branches(
             &mut module,
             &afl_prev_loc_indices,
             afl_mem_ptr_idx,
             Seed::Static(42),
             false,
+            &HashSet::new(),
+            None,
         );
 
         let instructions = module
@@ -1184,14 +1655,16 @@ mod tests {
 
         let history_size = 2;
         let mut module = Module::parse(&wat, false, false).unwrap();
-        let (afl_prev_loc_indices, afl_mem_ptr_idx) =
-            inject_globals(&mut module, history_size, false);
+        let (afl_prev_loc_indices, afl_mem_ptr_idx, _) =
+            inject_globals(&mut module, history_size, false, false);
         instrument_branches(
             &mut module,
             &afl_prev_loc_indices,
             afl_mem_ptr_idx,
             Seed::Static(42),
             false,
+            &HashSet::new(),
+            None,
         );
 
         let instructions = module
@@ -1245,6 +1718,7 @@ mod tests {
             wasm_bytes: wat,
             history_size,
             seed: Seed::Random,
+            instrument_instruction_count: false,
         });
     }
 
@@ -1360,6 +1834,7 @@ mod tests {
             wasm_bytes: wat,
             history_size,
             seed: Seed::Static(42),
+            instrument_instruction_count: false,
         });
 
         wasm_equality(generated, expected);
@@ -1477,6 +1952,7 @@ mod tests {
             wasm_bytes: wat,
             history_size,
             seed: Seed::Static(42),
+            instrument_instruction_count: false,
         });
 
         wasm_equality(generated, expected);
@@ -1524,5 +2000,121 @@ mod tests {
         .unwrap();
         let module = Module::parse(&wat, false, false).unwrap();
         assert!(!is_memory64(&module));
+    }
+
+    #[test]
+    fn instruction_count_instrumentation_wasm32() {
+        // A module with a canister_update export — should get a wrapper and instruction count export
+        let wat = wat::parse_str(
+            r#"
+            (module
+                (type (;0;) (func))
+                (import "ic0" "msg_reply" (func (;0;) (type 0)))
+                (memory (;0;) 1)
+                (export "memory" (memory 0))
+                (export "canister_update my_method" (func 1))
+                (func (;1;) (type 0)
+                    call 0
+                )
+            )
+            "#,
+        )
+        .unwrap();
+
+        let generated = instrument_wasm_for_fuzzing(InstrumentationArgs {
+            wasm_bytes: wat,
+            history_size: 1,
+            seed: Seed::Static(42),
+            instrument_instruction_count: true,
+        });
+
+        // Verify the instrumented module is valid
+        validate_wasm(&generated).unwrap();
+
+        // Parse the generated module and check for expected exports
+        let module = Module::parse(&generated, false, false).unwrap();
+
+        // Should have the original export, coverage export, and instruction count export
+        let has_coverage_export = module
+            .exports
+            .get_by_name(format!("canister_update {COVERAGE_FN_EXPORT_NAME}"))
+            .is_some();
+        let has_instruction_export = module
+            .exports
+            .get_by_name(format!("canister_query {INSTRUCTION_COUNT_FN_EXPORT_NAME}"))
+            .is_some();
+        let has_original_export = module
+            .exports
+            .get_by_name("canister_update my_method".to_string())
+            .is_some();
+
+        assert!(has_coverage_export, "Missing coverage export");
+        assert!(has_instruction_export, "Missing instruction count export");
+        assert!(has_original_export, "Missing original method export");
+
+        // The original export should now point to a different function (the wrapper)
+        let original_func_id = module
+            .exports
+            .get_func_by_name("canister_update my_method".to_string())
+            .unwrap();
+        // Original function was func 1 (after import at 0), wrapper should be a new function
+        assert_ne!(
+            original_func_id,
+            FunctionID(1),
+            "Export should point to wrapper, not original function"
+        );
+
+        // Check that performance_counter import exists
+        let perf_counter = module
+            .imports
+            .get_func("ic0".to_string(), "performance_counter".to_string());
+        assert!(perf_counter.is_some(), "Missing performance_counter import");
+    }
+
+    #[test]
+    fn instruction_count_no_canister_exports() {
+        // A module with no canister_update/query exports — should still work but no wrappers
+        let wat = wat::parse_str(
+            r#"
+            (module
+                (memory (;0;) 1)
+                (export "memory" (memory 0))
+                (func (;0;)
+                    nop
+                )
+            )
+            "#,
+        )
+        .unwrap();
+
+        let generated = instrument_wasm_for_fuzzing(InstrumentationArgs {
+            wasm_bytes: wat,
+            history_size: 1,
+            seed: Seed::Static(42),
+            instrument_instruction_count: true,
+        });
+
+        validate_wasm(&generated).unwrap();
+
+        let module = Module::parse(&generated, false, false).unwrap();
+
+        // Should still have instruction count export even with no canister methods
+        let has_instruction_export = module
+            .exports
+            .get_by_name(format!("canister_query {INSTRUCTION_COUNT_FN_EXPORT_NAME}"))
+            .is_some();
+        assert!(has_instruction_export, "Missing instruction count export");
+    }
+
+    #[test]
+    fn compute_cost_per_afl_call_values() {
+        // history_size=1: 23 + 6*1 = 29
+        assert_eq!(compute_cost_per_afl_call(1), 29);
+        // history_size=2: 23 + 6*2 = 35
+        assert_eq!(compute_cost_per_afl_call(2), 35);
+        // history_size=4: 23 + 6*4 = 47
+        assert_eq!(compute_cost_per_afl_call(4), 47);
+        // history_size=8: 23 + 6*8 = 71
+        assert_eq!(compute_cost_per_afl_call(8), 71);
     }
 }

@@ -1,1 +1,1 @@
-pub mod decode_map;
+pub mod instruction_count;
