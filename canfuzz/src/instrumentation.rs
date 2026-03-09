@@ -27,13 +27,36 @@
 //!
 //! ### Limitations
 //!
-//! - **Trapped executions report 0 instructions.** If the method traps, the wrapper never
-//!   executes. These inputs are captured by `CrashFeedback` / `TimeoutFeedback` instead.
-//! - **Instruction-limit exceeded** behaves identically to traps.
+//! - **Trapped executions report 0 instructions.** The wrapper function runs *after* the
+//!   original method returns. If execution never reaches that point, the instruction count
+//!   global keeps its previous value (reset to 0 at the start of each wrapper call). Traps
+//!   can originate from several sources:
+//!   - **Explicit traps:** The canister calls `ic0.trap(...)` or `ic_cdk::trap(...)`.
+//!   - **Wasm `unreachable`:** Rust's `panic!`/`unwrap()`/`expect()` compile to
+//!     `unreachable` after printing the panic message via `ic0.trap`.
+//!   - **Implicit wasm traps:** Integer divide-by-zero, integer overflow on `i32.trunc_f64_s`,
+//!     out-of-bounds memory access, out-of-bounds table access, indirect call type mismatch,
+//!     and stack overflow all cause the wasm runtime to trap immediately.
+//!   - **System API traps:** Many `ic0.*` calls can trap on invalid arguments (e.g.,
+//!     `ic0.msg_reply` called twice, `ic0.canister_cycle_balance` in the wrong context,
+//!     `ic0.stable_read` with out-of-bounds offset). The system call never returns and the
+//!     wasm execution is aborted.
+//!   - **Instruction limit exceeded:** The IC halts execution when the per-message instruction
+//!     limit is reached, which behaves identically to a trap.
+//!
+//!   In all of these cases the wrapper never executes, so the instruction count is 0. These
+//!   inputs are still captured by `CrashFeedback` / `TimeoutFeedback` and saved as crashes
+//!   or timeouts.
+//!
 //! - **The AFL overhead discount is approximate.** It assumes fixed IC instruction costs per
-//!   wasm opcode. For fuzzing guidance (relative ordering of inputs), approximate is sufficient.
+//!   wasm opcode (1 per opcode, 5 for `call`, 200 for `ic0.performance_counter` system API
+//!   overhead). The IC's actual cost model may differ slightly. For fuzzing guidance (relative
+//!   ordering of inputs), approximate is sufficient.
+//!
 //! - **`performance_counter(1)` includes inter-canister call instructions.** If the target
-//!   method makes downstream calls, those instructions are included in the count.
+//!   method makes downstream calls, the counter includes instructions executed in callbacks.
+//!   This is generally desirable (total cost of the message), but means the count is not
+//!   purely the target canister's own instructions.
 
 use anyhow::Result;
 use rand::Rng;
