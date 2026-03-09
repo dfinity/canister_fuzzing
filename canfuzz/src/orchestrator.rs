@@ -192,12 +192,12 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
 
     /// Fetches the instruction count from the instrumented canister and updates the global `INSTRUCTION_MAP`.
     ///
-    /// It makes an update call to the `__export_instruction_count_for_afl` function on the coverage canister.
+    /// It makes a query call to the `__export_instruction_count_for_afl` function on the coverage canister.
     /// If the instruction count exceeds the previous maximum, the input is marked as interesting.
     #[allow(static_mut_refs)]
     fn set_instruction_count(&self) {
         let test = self.get_state_machine();
-        let result = test.update_call(
+        let result = test.query_call(
             self.get_coverage_canister_id(),
             Principal::anonymous(),
             INSTRUCTION_COUNT_FN_EXPORT_NAME,

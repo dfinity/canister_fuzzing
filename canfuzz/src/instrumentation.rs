@@ -209,7 +209,7 @@ fn instrument_for_afl(
             is_memory64,
         )?;
         skip_function_ids.insert(export_fn_id);
-        println!("  -> Injected `canister_update {INSTRUCTION_COUNT_FN_EXPORT_NAME}` function.");
+        println!("  -> Injected `canister_query {INSTRUCTION_COUNT_FN_EXPORT_NAME}` function.");
 
         Some(call_count_global)
     } else {
@@ -724,10 +724,11 @@ fn inject_method_wrappers(
     wrapper_ids
 }
 
-/// Injects the `canister_update __export_instruction_count_for_afl` function.
+/// Injects the `canister_query __export_instruction_count_for_afl` function.
 ///
-/// This function stores the i64 instruction count to scratch memory (after coverage map)
-/// and replies with the 8 bytes.
+/// Exported as a query because it only reads the `__afl_instruction_count` global
+/// (set during the preceding update call) and does not modify persistent state.
+/// The scratch memory write is transient and discarded after the query returns.
 fn inject_instruction_count_export<'a>(
     module: &mut Module<'a>,
     history_size: usize,
@@ -790,7 +791,7 @@ fn inject_instruction_count_export<'a>(
     }
 
     let function_id = func_builder.finish_module(module);
-    let export_name = format!("canister_update {INSTRUCTION_COUNT_FN_EXPORT_NAME}");
+    let export_name = format!("canister_query {INSTRUCTION_COUNT_FN_EXPORT_NAME}");
     module.exports.add_export_func(export_name, function_id.0);
 
     Ok(function_id)
@@ -2017,9 +2018,7 @@ mod tests {
             .is_some();
         let has_instruction_export = module
             .exports
-            .get_by_name(format!(
-                "canister_update {INSTRUCTION_COUNT_FN_EXPORT_NAME}"
-            ))
+            .get_by_name(format!("canister_query {INSTRUCTION_COUNT_FN_EXPORT_NAME}"))
             .is_some();
         let has_original_export = module
             .exports
@@ -2079,9 +2078,7 @@ mod tests {
         // Should still have instruction count export even with no canister methods
         let has_instruction_export = module
             .exports
-            .get_by_name(format!(
-                "canister_update {INSTRUCTION_COUNT_FN_EXPORT_NAME}"
-            ))
+            .get_by_name(format!("canister_query {INSTRUCTION_COUNT_FN_EXPORT_NAME}"))
             .is_some();
         assert!(has_instruction_export, "Missing instruction count export");
     }
