@@ -34,9 +34,14 @@ use crate::libafl::{
     fuzzer::{Fuzzer, StdFuzzer},
     inputs::BytesInput,
     mutators::{HavocScheduledMutator, havoc_mutations},
-    observers::map::{StdMapObserver, hitcount_map::HitcountsMapObserver},
-    schedulers::QueueScheduler,
-    stages::{AflStatsStage, CalibrationStage, mutational::StdMutationalStage},
+    observers::{
+        CanTrack,
+        map::{StdMapObserver, hitcount_map::HitcountsMapObserver},
+    },
+    schedulers::{
+        IndexesLenTimeMinimizerScheduler, StdWeightedScheduler, powersched::PowerSchedule,
+    },
+    stages::{AflStatsStage, CalibrationStage, StdPowerMutationalStage},
     state::StdState,
 };
 
@@ -257,7 +262,8 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
 
         let hitcount_map_observer = HitcountsMapObserver::new(unsafe {
             StdMapObserver::new("coverage_map", self.get_coverage_map())
-        });
+        })
+        .track_indices();
 
         // AflMapFeedback must be created before the observer is moved into a tuple.
         let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
@@ -278,11 +284,12 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
                 )
             };
 
-            let feedback = feedback_or!(InstructionCountFeedback::new(), afl_map_feedback.clone());
+            let feedback = feedback_or!(afl_map_feedback.clone(), InstructionCountFeedback::new());
             run_fuzzing_loop!(
                 self,
                 &mut harness,
-                tuple_list!(hitcount_map_observer, instruction_count_observer),
+                hitcount_map_observer,
+                (instruction_count_observer),
                 afl_map_feedback,
                 feedback
             );
@@ -291,7 +298,8 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
             run_fuzzing_loop!(
                 self,
                 &mut harness,
-                tuple_list!(hitcount_map_observer),
+                hitcount_map_observer,
+                (),
                 afl_map_feedback,
                 feedback
             );
@@ -320,11 +328,14 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
 /// instruction maximization is enabled, but the rest of the loop (state, executor,
 /// corpus loading, stages) is identical.
 ///
+/// `$map_observer` is the owned hitcount map observer. It is borrowed by the scheduler
+/// constructors, then moved into the observer tuple alongside any `$extra_observers`.
 /// `$afl_map_feedback` must be an already-constructed `AflMapFeedback` (created from
 /// the hitcount observer before the observer is moved into the tuple).
 #[macro_export]
 macro_rules! run_fuzzing_loop {
-    ($self:expr, $harness:expr, $observers:expr, $afl_map_feedback:expr, $feedback:expr) => {{
+    ($self:expr, $harness:expr, $map_observer:expr, ($($extra_observer:expr),*), $afl_map_feedback:expr, $feedback:expr) => {{
+        let map_observer = $map_observer;
         let afl_map_feedback = $afl_map_feedback;
         let mut feedback = $feedback;
         let calibration_stage = CalibrationStage::new(&afl_map_feedback);
@@ -348,13 +359,22 @@ macro_rules! run_fuzzing_loop {
         )
         .unwrap();
 
+        // AFL++-style weighted scheduler with FAST power schedule, wrapped in a
+        // corpus minimizer that favors short + fast inputs covering rare edges.
+        let weighted = StdWeightedScheduler::with_schedule(
+            &mut state,
+            &map_observer,
+            Some(PowerSchedule::fast()),
+        );
+        let scheduler = IndexesLenTimeMinimizerScheduler::new(&map_observer, weighted);
+
         let mon = SimpleMonitor::new(|s| println!("{s}"));
         let mut mgr = SimpleEventManager::new(mon);
-        let scheduler = QueueScheduler::new();
         let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
 
+        let observers = tuple_list!(map_observer $(, $extra_observer)*);
         let mut executor =
-            InProcessExecutor::new($harness, $observers, &mut fuzzer, &mut state, &mut mgr)
+            InProcessExecutor::new($harness, observers, &mut fuzzer, &mut state, &mut mgr)
                 .expect("Failed to create the Executor");
 
         // Load initial inputs from the corpus directory
@@ -374,11 +394,14 @@ macro_rules! run_fuzzing_loop {
                 .unwrap();
         }
 
-        let mutator = HavocScheduledMutator::new(havoc_mutations());
+        // Power-aware mutation stages: mutation count per corpus entry is scaled
+        // by its score (bitmap size, exec time, rarity) instead of random 1-128.
+        let havoc_mutator = HavocScheduledMutator::new(havoc_mutations());
+        let candid_mutator = CandidParserMutator::new(Self::get_candid_args());
         let mut stages = tuple_list!(
             calibration_stage,
-            StdMutationalStage::transforming(CandidParserMutator::new(Self::get_candid_args())),
-            StdMutationalStage::transforming(mutator),
+            StdPowerMutationalStage::new(candid_mutator),
+            StdPowerMutationalStage::new(havoc_mutator),
             stats_stage
         );
 
