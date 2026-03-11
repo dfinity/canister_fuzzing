@@ -101,7 +101,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
     fn instruction_config() -> canfuzz::orchestrator::InstructionConfig {
         canfuzz::orchestrator::InstructionConfig {
             enabled: true,
-            debug: true,
+            max_instruction_count: Some(10_000_000),
         }
     }
 }

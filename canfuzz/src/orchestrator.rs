@@ -9,8 +9,10 @@
 //! `enabled: true`, the fuzzer additionally tracks instruction counts via
 //! [`set_instruction_count`](FuzzerOrchestrator::set_instruction_count) and uses
 //! [`InstructionCountFeedback`](crate::custom::feedback::instruction_count::InstructionCountFeedback)
-//! to guide inputs toward higher instruction consumption. Setting `debug: true` prints
-//! the new maximum to stdout each time the record is broken.
+//! to guide inputs toward higher instruction consumption. Each time the maximum instruction
+//! count is broken, a detailed log line is printed and the input is saved to disk.
+//! If [`InstructionConfig::max_instruction_count`] is set, inputs that exceed the threshold
+//! are treated as crashes.
 
 use candid::Principal;
 use chrono::Local;
@@ -19,7 +21,7 @@ use libafl::feedback_or;
 use libafl::feedbacks::{ExitKindFeedback, TimeoutFeedback};
 use pocket_ic::PocketIc;
 use std::fs::{self, File};
-use std::io::Read;
+use std::io::{Read, Write as IoWrite};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -62,8 +64,8 @@ use crate::fuzzer::FuzzerState;
 pub struct InstructionConfig {
     /// Enable instruction count maximization feedback.
     pub enabled: bool,
-    /// Print the new maximum instruction count to stdout each time the record is broken.
-    pub debug: bool,
+    /// If set, inputs whose instruction count exceeds this threshold are treated as crashes.
+    pub max_instruction_count: Option<u64>,
 }
 
 /// A trait that defines the necessary components for a canister fuzzing target.
@@ -190,6 +192,8 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
     ///
     /// Override this to return an [`InstructionConfig`] with `enabled: true` to track
     /// instruction counts and guide the fuzzer toward inputs that consume more IC instructions.
+    /// Optionally set `max_instruction_count` to a threshold — inputs that exceed it will be
+    /// treated as crashes.
     /// Requires `instrument_instruction_count: true` in `InstrumentationArgs`.
     fn instruction_config() -> InstructionConfig {
         InstructionConfig::default()
@@ -199,8 +203,10 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
     ///
     /// It makes a query call to the `__export_instruction_count_for_afl` function on the coverage canister.
     /// If the instruction count exceeds the previous maximum, the input is marked as interesting.
+    /// Returns `true` if the instruction count exceeded the configured
+    /// [`InstructionConfig::max_instruction_count`] threshold (i.e. should be treated as a crash).
     #[allow(static_mut_refs)]
-    fn set_instruction_count(&self) {
+    fn set_instruction_count(&self, input: &BytesInput) -> bool {
         let test = self.get_state_machine();
         let result = test.query_call(
             self.get_coverage_canister_id(),
@@ -214,16 +220,49 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
             let instructions = u64::from_le_bytes(result[0..8].try_into().unwrap());
             let mut map = unsafe { INSTRUCTION_MAP.borrow_mut() };
             if instructions > map.max_instructions {
+                let prev = map.max_instructions;
                 map.increased = true;
                 map.max_instructions = instructions;
-                if Self::instruction_config().debug {
-                    println!("[instructions] new max: {instructions}");
+
+                let input_bytes: Vec<u8> = input.clone().into();
+                let input_len = input_bytes.len();
+                let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+
+                // Save the input and log to the corpus directory
+                let corpus_dir = self.corpus_dir();
+                let corpus_file = corpus_dir.join(format!("max_instructions_{instructions}"));
+                if let Ok(mut f) = File::create(&corpus_file) {
+                    let _ = f.write_all(&input_bytes);
+                }
+
+                // Hex preview of input bytes (first 64 bytes)
+                let hex_preview: String = input_bytes.iter().take(64).map(|b| format!("{b:02x}")).collect();
+                let truncated = if input_len > 64 { "..." } else { "" };
+
+                let log_line = format!(
+                    "[instructions] NEW MAX | timestamp: {timestamp} | instructions: {instructions} (prev: {prev}) | input_len: {input_len} | hex: {hex_preview}{truncated} | corpus_file: {}",
+                    corpus_file.display()
+                );
+                println!("{log_line}");
+
+                // Append to log file
+                let log_path = corpus_dir.join("instruction_log.txt");
+                if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+                    let _ = writeln!(f, "{log_line}");
                 }
             } else {
                 map.increased = false;
             }
             map.current_instructions = instructions;
+
+            // Check threshold
+            if let Some(threshold) = Self::instruction_config().max_instruction_count {
+                if instructions > threshold {
+                    return true;
+                }
+            }
         }
+        false
     }
 
     /// The main entry point for running a fuzzing campaign.
@@ -254,8 +293,8 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
             self.setup();
             let result = self.execute(input.clone());
             self.set_coverage_map();
-            if inst_config.enabled {
-                self.set_instruction_count();
+            if inst_config.enabled && self.set_instruction_count(input) {
+                return ExitKind::Crash;
             }
             result
         };
