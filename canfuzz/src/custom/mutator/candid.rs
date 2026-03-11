@@ -341,19 +341,27 @@ fn mutate_text<R: Rng>(s: &mut String, rng: &mut R) {
 
     match rng.random_range(0..10) {
         0..5 => {
-            let idx = rng.random_range(0..s.len());
+            // Pick a random char-aligned index for insertion
+            let char_count = s.chars().count();
+            let char_idx = rng.random_range(0..=char_count);
+            let byte_idx = s
+                .char_indices()
+                .nth(char_idx)
+                .map_or(s.len(), |(i, _)| i);
             let naughty_index = rng.random_range(0..naughty_strings::BLNS.len());
-            s.insert_str(idx, naughty_strings::BLNS[naughty_index]);
+            s.insert_str(byte_idx, naughty_strings::BLNS[naughty_index]);
         }
         5 => {
             s.pop();
         }
         6 => *s = String::from(""),
-        7..9 => unsafe {
-            let v = s.as_mut_vec();
+        7..9 => {
+            // Flip a byte and ensure the result is still valid UTF-8
+            let mut v = s.as_bytes().to_vec();
             let idx = rng.random_range(0..v.len());
             v[idx] = v[idx].wrapping_add(1);
-        },
+            *s = String::from_utf8_lossy(&v).into_owned();
+        }
         _ => {}
     }
 }
@@ -577,7 +585,7 @@ mod tests {
         mutate_text(&mut s, &mut rng);
         assert_eq!(
             s,
-            "h\"`'><script>\\xE3\\x80\\x80javascript:alert(1)</script>ello"
+            "he\"`'><script>\\xE3\\x80\\x80javascript:alert(1)</script>llo"
         );
     }
 
