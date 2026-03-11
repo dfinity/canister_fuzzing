@@ -315,41 +315,91 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
         // AflMapFeedback must be created before the observer is moved into a tuple.
         let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
 
-        // The observer/feedback types differ at compile time depending on whether
-        // instruction maximization is enabled, so we branch into the macro here.
-        if inst_config.enabled {
-            use crate::custom::feedback::instruction_count::InstructionCountFeedback;
-            use crate::custom::observer::instruction_count::INSTRUCTION_COUNT_OBSERVER_NAME;
-            use crate::libafl::observers::RefCellValueObserver;
-            use crate::libafl_bolts::ownedref::OwnedRef;
-            use std::ptr::addr_of;
+        let candid_enabled = Self::get_candid_args().is_some();
 
-            let instruction_count_observer = unsafe {
-                RefCellValueObserver::new(
-                    INSTRUCTION_COUNT_OBSERVER_NAME,
-                    OwnedRef::from_ptr(addr_of!(INSTRUCTION_MAP)),
-                )
-            };
+        // The observer/feedback/stage types differ at compile time depending on
+        // configuration, so we branch into different macro invocations here.
+        // Each combination of (instruction count, candid mutator) needs its own
+        // call because `tuple_list!` is a compile-time construct.
+        match (inst_config.enabled, candid_enabled) {
+            (true, true) => {
+                use crate::custom::feedback::instruction_count::InstructionCountFeedback;
+                use crate::custom::observer::instruction_count::INSTRUCTION_COUNT_OBSERVER_NAME;
+                use crate::libafl::observers::RefCellValueObserver;
+                use crate::libafl_bolts::ownedref::OwnedRef;
+                use std::ptr::addr_of;
 
-            let feedback = feedback_or!(afl_map_feedback.clone(), InstructionCountFeedback::new());
-            run_fuzzing_loop!(
-                self,
-                &mut harness,
-                hitcount_map_observer,
-                (instruction_count_observer),
-                afl_map_feedback,
-                feedback
-            );
-        } else {
-            let feedback = afl_map_feedback.clone();
-            run_fuzzing_loop!(
-                self,
-                &mut harness,
-                hitcount_map_observer,
-                (),
-                afl_map_feedback,
-                feedback
-            );
+                let instruction_count_observer = unsafe {
+                    RefCellValueObserver::new(
+                        INSTRUCTION_COUNT_OBSERVER_NAME,
+                        OwnedRef::from_ptr(addr_of!(INSTRUCTION_MAP)),
+                    )
+                };
+                let candid_mutator = CandidParserMutator::new(Self::get_candid_args());
+
+                let feedback =
+                    feedback_or!(afl_map_feedback.clone(), InstructionCountFeedback::new());
+                run_fuzzing_loop!(
+                    self,
+                    &mut harness,
+                    hitcount_map_observer,
+                    (instruction_count_observer),
+                    (StdPowerMutationalStage::new(candid_mutator)),
+                    afl_map_feedback,
+                    feedback
+                );
+            }
+            (true, false) => {
+                use crate::custom::feedback::instruction_count::InstructionCountFeedback;
+                use crate::custom::observer::instruction_count::INSTRUCTION_COUNT_OBSERVER_NAME;
+                use crate::libafl::observers::RefCellValueObserver;
+                use crate::libafl_bolts::ownedref::OwnedRef;
+                use std::ptr::addr_of;
+
+                let instruction_count_observer = unsafe {
+                    RefCellValueObserver::new(
+                        INSTRUCTION_COUNT_OBSERVER_NAME,
+                        OwnedRef::from_ptr(addr_of!(INSTRUCTION_MAP)),
+                    )
+                };
+
+                let feedback =
+                    feedback_or!(afl_map_feedback.clone(), InstructionCountFeedback::new());
+                run_fuzzing_loop!(
+                    self,
+                    &mut harness,
+                    hitcount_map_observer,
+                    (instruction_count_observer),
+                    (),
+                    afl_map_feedback,
+                    feedback
+                );
+            }
+            (false, true) => {
+                let candid_mutator = CandidParserMutator::new(Self::get_candid_args());
+                let feedback = afl_map_feedback.clone();
+                run_fuzzing_loop!(
+                    self,
+                    &mut harness,
+                    hitcount_map_observer,
+                    (),
+                    (StdPowerMutationalStage::new(candid_mutator)),
+                    afl_map_feedback,
+                    feedback
+                );
+            }
+            (false, false) => {
+                let feedback = afl_map_feedback.clone();
+                run_fuzzing_loop!(
+                    self,
+                    &mut harness,
+                    hitcount_map_observer,
+                    (),
+                    (),
+                    afl_map_feedback,
+                    feedback
+                );
+            }
         }
     }
 
@@ -370,18 +420,19 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
     }
 }
 
-/// Macro to avoid duplicating the fuzzing loop for different observer/feedback
-/// type tuples. The observer tuple and feedback composition differ depending on whether
-/// instruction maximization is enabled, but the rest of the loop (state, executor,
-/// corpus loading, stages) is identical.
+/// Macro to avoid duplicating the fuzzing loop for different observer/feedback/stage
+/// type tuples. The observer tuple, feedback composition, and mutation stages differ
+/// depending on configuration (instruction count, Candid mutator), but the rest of
+/// the loop (state, executor, corpus loading) is identical.
 ///
 /// `$map_observer` is the owned hitcount map observer. It is borrowed by the scheduler
 /// constructors, then moved into the observer tuple alongside any `$extra_observers`.
 /// `$afl_map_feedback` must be an already-constructed `AflMapFeedback` (created from
 /// the hitcount observer before the observer is moved into the tuple).
+/// `$extra_stages` are inserted before the havoc mutator stage (e.g. Candid mutator).
 #[macro_export]
 macro_rules! run_fuzzing_loop {
-    ($self:expr, $harness:expr, $map_observer:expr, ($($extra_observer:expr),*), $afl_map_feedback:expr, $feedback:expr) => {{
+    ($self:expr, $harness:expr, $map_observer:expr, ($($extra_observer:expr),*), ($($extra_stage:expr),*), $afl_map_feedback:expr, $feedback:expr) => {{
         let map_observer = $map_observer;
         let afl_map_feedback = $afl_map_feedback;
         let mut feedback = $feedback;
@@ -444,10 +495,9 @@ macro_rules! run_fuzzing_loop {
         // Power-aware mutation stages: mutation count per corpus entry is scaled
         // by its score (bitmap size, exec time, rarity) instead of random 1-128.
         let havoc_mutator = HavocScheduledMutator::new(havoc_mutations());
-        let candid_mutator = CandidParserMutator::new(Self::get_candid_args());
         let mut stages = tuple_list!(
             calibration_stage,
-            StdPowerMutationalStage::new(candid_mutator),
+            $($extra_stage,)*
             StdPowerMutationalStage::new(havoc_mutator),
             stats_stage
         );
