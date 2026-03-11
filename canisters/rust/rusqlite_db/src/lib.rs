@@ -139,7 +139,7 @@ enum SqlOperation {
 /// Quote an identifier with double-quotes (intentionally not parameterized to stress identifier handling).
 fn quote_ident(s: &str) -> String {
     // Truncate long identifiers to prevent excessive memory use
-    let s = if s.len() > 128 { &s[..128] } else { s };
+    let s = &s[..s.floor_char_boundary(128)];
     format!("\"{}\"", s.replace('"', "\"\""))
 }
 
@@ -151,7 +151,7 @@ fn sql_value_to_param(val: &SqlValue) -> String {
         SqlValue::Integer(i) => i.to_string(),
         SqlValue::Real(f) => format!("{f}"),
         SqlValue::Text(s) => {
-            let s = if s.len() > 1024 { &s[..1024] } else { s.as_str() };
+            let s = &s[..s.floor_char_boundary(1024)];
             format!("'{}'", s.replace('\'', "''"))
         }
         SqlValue::Blob(b) => {
@@ -184,7 +184,7 @@ fn render_where(clause: &WhereClause, depth: usize) -> String {
             format!("{} IS NULL", quote_ident(col))
         }
         WhereClause::Like { col, pattern } => {
-            let p = if pattern.len() > 256 { &pattern[..256] } else { pattern.as_str() };
+            let p = &pattern[..pattern.floor_char_boundary(256)];
             format!("{} LIKE '{}'", quote_ident(col), p.replace('\'', "''"))
         }
         WhereClause::Between { col, low, high } => {
@@ -454,7 +454,7 @@ fn execute_op(conn: &Connection, op: &SqlOperation) {
 
         SqlOperation::RawSql { sql } => {
             // Truncate to prevent extremely large SQL strings
-            let sql = if sql.len() > 4096 { &sql[..4096] } else { sql.as_str() };
+            let sql = &sql[..sql.floor_char_boundary(4096)];
             let _ = conn.execute_batch(sql);
         }
     }
