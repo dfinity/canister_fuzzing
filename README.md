@@ -79,10 +79,14 @@ fn main() {
 1.  **Rust**:
     ```sh
     rustup default stable
-    rustup target add wasm32-unknown-unknown
+    rustup target add wasm32-unknown-unknown wasm32-wasip1
     ```
-2.  **DFX**: [Installation guide](https://internetcomputer.org/docs/current/developer-docs/getting-started/install/index.html) (for Motoko canisters).
-3.  **Mops**: `npm install -g mops` (for Motoko canisters).
+2.  **wasi2ic** (for WASI-based canisters like `rusqlite_db`):
+    ```sh
+    cargo install wasi2ic
+    ```
+3.  **DFX**: [Installation guide](https://internetcomputer.org/docs/current/developer-docs/getting-started/install/index.html) (for Motoko canisters).
+4.  **Mops**: `npm install -g mops` (for Motoko canisters).
 
 
 The `examples/` directory contains sample fuzzers. To run the `stable_memory_ops` example:
