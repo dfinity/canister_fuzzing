@@ -11,8 +11,3 @@ rustflags = [
     "-C",
     "debuginfo=0",
 ]
-
-[toolchain]
-channel = "1.89.0"
-profile = "default"
-targets = ["wasm32-unknown-unknown"]
