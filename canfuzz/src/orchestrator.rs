@@ -236,7 +236,11 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
                 }
 
                 // Hex preview of input bytes (first 64 bytes)
-                let hex_preview: String = input_bytes.iter().take(64).map(|b| format!("{b:02x}")).collect();
+                let hex_preview: String = input_bytes
+                    .iter()
+                    .take(64)
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
                 let truncated = if input_len > 64 { "..." } else { "" };
 
                 let log_line = format!(
@@ -247,7 +251,11 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
 
                 // Append to log file
                 let log_path = corpus_dir.join("instruction_log.txt");
-                if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+                if let Ok(mut f) = fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path)
+                {
                     let _ = writeln!(f, "{log_line}");
                 }
             } else {
@@ -256,10 +264,10 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
             map.current_instructions = instructions;
 
             // Check threshold
-            if let Some(threshold) = Self::instruction_config().max_instruction_count {
-                if instructions > threshold {
-                    return true;
-                }
+            if let Some(threshold) = Self::instruction_config().max_instruction_count
+                && instructions > threshold
+            {
+                return true;
             }
         }
         false
