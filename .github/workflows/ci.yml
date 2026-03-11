@@ -9,6 +9,7 @@ env:
   RUST_VERSION: 1.89.0
   DFX_VERSION: 0.30.1
   MOPS_VERSION: 1
+  WASI2IC_VERSION: 0.2.16
 
 jobs:
   validate:
@@ -31,7 +32,7 @@ jobs:
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: "${{ env.RUST_VERSION }}"
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown, wasm32-wasip1
           components: clippy, rustfmt
 
       - name: Setup DFX
@@ -43,6 +44,9 @@ jobs:
         uses: dfinity/setup-mops@3e94e453352269b34137b5ce49f09a8df81bed7d # v1.4.1
         with:
           mops-version: "${{ env.MOPS_VERSION }}"
+
+      - name: Install wasi2ic
+        run: cargo install wasi2ic@${{ env.WASI2IC_VERSION }}
 
       - name: Check Format
         run: cargo fmt --all -- --check

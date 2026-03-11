@@ -10,16 +10,14 @@ fn main() {
     fs::create_dir_all(&corpus_dir).unwrap();
 
     // Seed 1: Create a simple table
-    let seed1 = Encode!(&vec![
-        SqlOp::CreateTable {
-            table: "users".to_string(),
-            columns: vec![
-                col("id", "INTEGER", true, false, false, None),
-                col("name", "TEXT", false, true, false, None),
-                col("email", "TEXT", false, false, true, None),
-            ],
-        },
-    ])
+    let seed1 = Encode!(&vec![SqlOp::CreateTable {
+        table: "users".to_string(),
+        columns: vec![
+            col("id", "INTEGER", true, false, false, None),
+            col("name", "TEXT", false, true, false, None),
+            col("email", "TEXT", false, false, true, None),
+        ],
+    },])
     .unwrap();
     write_seed(&corpus_dir, "seed_create_table", &seed1);
 
@@ -98,10 +96,7 @@ fn main() {
         SqlOp::Insert {
             table: "kv".to_string(),
             columns: vec!["k".into(), "v".into()],
-            values: vec![
-                SqlVal::Text("key1".into()),
-                SqlVal::Blob(vec![1, 2, 3]),
-            ],
+            values: vec![SqlVal::Text("key1".into()), SqlVal::Blob(vec![1, 2, 3]),],
         },
         SqlOp::Update {
             table: "kv".to_string(),
@@ -314,16 +309,46 @@ fn col(
 
 #[derive(CandidType, Serialize, Deserialize)]
 enum Where {
-    Eq { col: String, val: SqlVal },
-    NotEq { col: String, val: SqlVal },
-    Lt { col: String, val: SqlVal },
-    Gt { col: String, val: SqlVal },
-    IsNull { col: String },
-    Like { col: String, pattern: String },
-    Between { col: String, low: SqlVal, high: SqlVal },
-    InList { col: String, vals: Vec<SqlVal> },
-    And { left: Box<Where>, right: Box<Where> },
-    Or { left: Box<Where>, right: Box<Where> },
+    Eq {
+        col: String,
+        val: SqlVal,
+    },
+    NotEq {
+        col: String,
+        val: SqlVal,
+    },
+    Lt {
+        col: String,
+        val: SqlVal,
+    },
+    Gt {
+        col: String,
+        val: SqlVal,
+    },
+    IsNull {
+        col: String,
+    },
+    Like {
+        col: String,
+        pattern: String,
+    },
+    Between {
+        col: String,
+        low: SqlVal,
+        high: SqlVal,
+    },
+    InList {
+        col: String,
+        vals: Vec<SqlVal>,
+    },
+    And {
+        left: Box<Where>,
+        right: Box<Where>,
+    },
+    Or {
+        left: Box<Where>,
+        right: Box<Where>,
+    },
 }
 
 #[derive(CandidType, Serialize, Deserialize)]

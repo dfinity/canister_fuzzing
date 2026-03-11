@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 publish = false
+default-run = "rusqlite_fuzz"
 
 build = "build.rs"
 
