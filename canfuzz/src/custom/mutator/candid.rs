@@ -333,6 +333,12 @@ fn mutate_value<R: Rng>(val: &mut IDLValue, ty: &Type, env: &TypeEnv, rng: &mut 
 
 /// Mutates a `String` by inserting a "naughty string", removing characters, or flipping bits.
 fn mutate_text<R: Rng>(s: &mut String, rng: &mut R) {
+    if s.is_empty() {
+        let naughty_index = rng.random_range(0..naughty_strings::BLNS.len());
+        s.push_str(naughty_strings::BLNS[naughty_index]);
+        return;
+    }
+
     match rng.random_range(0..10) {
         0..5 => {
             let idx = rng.random_range(0..s.len());
@@ -340,20 +346,14 @@ fn mutate_text<R: Rng>(s: &mut String, rng: &mut R) {
             s.insert_str(idx, naughty_strings::BLNS[naughty_index]);
         }
         5 => {
-            if !s.is_empty() {
-                s.pop();
-            }
+            s.pop();
         }
         6 => *s = String::from(""),
-        7..9 => {
-            if !s.is_empty() {
-                unsafe {
-                    let v = s.as_mut_vec();
-                    let idx = rng.random_range(0..v.len());
-                    v[idx] = v[idx].wrapping_add(1);
-                }
-            }
-        }
+        7..9 => unsafe {
+            let v = s.as_mut_vec();
+            let idx = rng.random_range(0..v.len());
+            v[idx] = v[idx].wrapping_add(1);
+        },
         _ => {}
     }
 }
@@ -432,7 +432,7 @@ where
     }
 }
 
-/// Mutates a `Vec<IDLValue>` by removing, duplicating, or mutating an element.
+/// Mutates a `Vec<IDLValue>` by removing, adding, duplicating, or mutating an element.
 fn mutate_vec<R: Rng>(
     vec: &mut Vec<IDLValue>,
     item_ty: &Type,
@@ -441,6 +441,18 @@ fn mutate_vec<R: Rng>(
     depth: usize,
 ) {
     if vec.is_empty() {
+        // Generate a new element so empty vecs can grow back
+        let seed = rng.random::<u64>().to_le_bytes().to_vec();
+        if let Ok(random_val) = candid_parser::random::any(
+            &seed,
+            Configs::from_str("").unwrap(),
+            env,
+            std::slice::from_ref(item_ty),
+            &None,
+        ) && let Some(new_val) = random_val.args.into_iter().next()
+        {
+            vec.push(new_val);
+        }
         return;
     }
 
@@ -488,7 +500,7 @@ fn mutate_principal<R: Rng>(p: &mut Principal, rng: &mut R) {
 
 /// Mutates a `blob` (a `Vec<u8>`) by resizing it and filling it with random bytes.
 fn mutate_blob<R: Rng>(b: &mut Vec<u8>, rng: &mut R) {
-    let new_size = rng.random_range(0..b.len());
+    let new_size = rng.random_range(0..=b.len().max(1));
     b.resize(new_size, 0);
     rng.fill_bytes(b);
 }

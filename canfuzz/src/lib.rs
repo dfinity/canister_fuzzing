@@ -63,6 +63,8 @@
 //! [`FuzzerOrchestrator::instruction_config`](orchestrator::FuzzerOrchestrator::instruction_config)
 //! to return an [`InstructionConfig`](orchestrator::InstructionConfig) with `enabled: true`. No changes to the target canister source code are required — the
 //! framework automatically wraps exported methods to read `ic0.performance_counter`.
+//! Each time a new maximum is reached, the input is logged and saved to the corpus directory.
+//! Optionally set `max_instruction_count` to flag inputs that exceed a threshold as crashes.
 //!
 //! See the `decode_candid_by_instructions` example for a complete demonstration.
 //!
