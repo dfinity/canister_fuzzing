@@ -2610,6 +2610,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusqlite_fuzz"
+version = "0.5.0"
+dependencies = [
+ "build_canister",
+ "candid",
+ "canfuzz",
+ "once_cell",
+ "pocket-ic",
+ "serde",
+ "slog",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"

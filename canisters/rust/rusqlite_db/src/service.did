@@ -1,0 +1,79 @@
+type SqlValue = variant {
+  Null;
+  Integer : int64;
+  Real : float64;
+  Text : text;
+  Blob : blob;
+};
+
+type ColumnDef = record {
+  name : text;
+  col_type : text;
+  primary_key : bool;
+  not_null : bool;
+  unique : bool;
+  default_val : opt SqlValue;
+};
+
+type WhereClause = variant {
+  Eq : record { col : text; val : SqlValue };
+  NotEq : record { col : text; val : SqlValue };
+  Lt : record { col : text; val : SqlValue };
+  Gt : record { col : text; val : SqlValue };
+  IsNull : record { col : text };
+  Like : record { col : text; pattern : text };
+  Between : record { col : text; low : SqlValue; high : SqlValue };
+  InList : record { col : text; vals : vec SqlValue };
+  And : record { left : WhereClause; right : WhereClause };
+  Or : record { left : WhereClause; right : WhereClause };
+};
+
+type JoinType = variant {
+  Inner;
+  Left;
+  Cross;
+};
+
+type JoinClause = record {
+  join_type : JoinType;
+  table : text;
+  on_left_col : text;
+  on_right_col : text;
+};
+
+type AggregateExpr = record {
+  func : variant { Count; Sum; Avg; Min; Max; GroupConcat };
+  col : text;
+};
+
+type OrderDir = variant { Asc; Desc };
+
+type SqlOperation = variant {
+  CreateTable : record { table : text; columns : vec ColumnDef };
+  DropTable : record { table : text };
+  Insert : record { table : text; columns : vec text; values : vec SqlValue };
+  Select : record {
+    table : text;
+    columns : vec text;
+    where_clause : opt WhereClause;
+    joins : vec JoinClause;
+    aggregates : vec AggregateExpr;
+    group_by : vec text;
+    order_by : vec record { col : text; dir : OrderDir };
+    limit : opt nat32;
+  };
+  Update : record { table : text; assignments : vec record { col : text; val : SqlValue }; where_clause : opt WhereClause };
+  Delete : record { table : text; where_clause : opt WhereClause };
+  CreateIndex : record { table : text; columns : vec text; unique : bool };
+  BeginTransaction;
+  Commit;
+  Rollback;
+  Vacuum;
+  RawSql : record { sql : text };
+};
+
+type OperationList = vec SqlOperation;
+
+service : {
+  sql_ops : (OperationList) -> ();
+}
