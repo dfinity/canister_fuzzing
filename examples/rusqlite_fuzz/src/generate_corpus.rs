@@ -217,11 +217,11 @@ fn main() {
             joins: vec![],
             aggregates: vec![
                 Agg {
-                    func: AggFn::Sum,
+                    agg_func: AggFn::Sum,
                     col: "amount".into(),
                 },
                 Agg {
-                    func: AggFn::Count,
+                    agg_func: AggFn::Count,
                     col: "amount".into(),
                 },
             ],
@@ -378,7 +378,7 @@ enum AggFn {
 
 #[derive(CandidType, Serialize, Deserialize)]
 struct Agg {
-    func: AggFn,
+    agg_func: AggFn,
     col: String,
 }
 

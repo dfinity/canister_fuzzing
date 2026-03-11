@@ -42,7 +42,7 @@ type JoinClause = record {
 };
 
 type AggregateExpr = record {
-  func : variant { Count; Sum; Avg; Min; Max; GroupConcat };
+  agg_func : variant { Count; Sum; Avg; Min; Max; GroupConcat };
   col : text;
 };
 

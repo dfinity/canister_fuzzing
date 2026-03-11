@@ -65,7 +65,7 @@ enum AggregateFunc {
 
 #[derive(Clone, Debug, Arbitrary, Deserialize, Serialize, CandidType)]
 struct AggregateExpr {
-    func: AggregateFunc,
+    agg_func: AggregateFunc,
     col: String,
 }
 
@@ -301,7 +301,7 @@ fn execute_op(conn: &Connection, op: &SqlOperation) {
                 select_parts.push(quote_ident(col));
             }
             for agg in aggregates.iter().take(8) {
-                let func_name = match agg.func {
+                let func_name = match agg.agg_func {
                     AggregateFunc::Count => "COUNT",
                     AggregateFunc::Sum => "SUM",
                     AggregateFunc::Avg => "AVG",
