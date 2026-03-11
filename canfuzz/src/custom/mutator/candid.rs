@@ -344,10 +344,7 @@ fn mutate_text<R: Rng>(s: &mut String, rng: &mut R) {
             // Pick a random char-aligned index for insertion
             let char_count = s.chars().count();
             let char_idx = rng.random_range(0..=char_count);
-            let byte_idx = s
-                .char_indices()
-                .nth(char_idx)
-                .map_or(s.len(), |(i, _)| i);
+            let byte_idx = s.char_indices().nth(char_idx).map_or(s.len(), |(i, _)| i);
             let naughty_index = rng.random_range(0..naughty_strings::BLNS.len());
             s.insert_str(byte_idx, naughty_strings::BLNS[naughty_index]);
         }
