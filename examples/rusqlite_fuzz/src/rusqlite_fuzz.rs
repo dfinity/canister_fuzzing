@@ -74,7 +74,7 @@ impl FuzzerOrchestrator for RusqliteFuzzer {
                 wasm_bytes: read_canister_bytes(info.wasm_path.clone()),
                 history_size: 8,
                 seed: Seed::Random,
-                instrument_instruction_count: false,
+                instrument_instruction_count: true,
             });
             test.install_canister(canister_id, module, vec![], None);
             info.id = Some(canister_id);
@@ -108,5 +108,12 @@ impl FuzzerOrchestrator for RusqliteFuzzer {
         );
 
         parse_canister_result_for_trap(result)
+    }
+
+    fn instruction_config() -> canfuzz::orchestrator::InstructionConfig {
+        canfuzz::orchestrator::InstructionConfig {
+            enabled: true,
+            max_instruction_count: Some(4_000_000_000),
+        }
     }
 }

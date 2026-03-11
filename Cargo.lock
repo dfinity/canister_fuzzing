@@ -2615,10 +2615,12 @@ version = "0.5.0"
 dependencies = [
  "build_canister",
  "candid",
+ "candid_parser",
  "canfuzz",
  "once_cell",
  "pocket-ic",
  "serde",
+ "serde_bytes",
  "slog",
 ]
 
