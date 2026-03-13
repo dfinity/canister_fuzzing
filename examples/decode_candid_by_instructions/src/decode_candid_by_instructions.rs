@@ -10,7 +10,7 @@
 //! [`InstructionCountFeedback`](canfuzz::custom::feedback::instruction_count::InstructionCountFeedback),
 //! which considers inputs that increase the maximum instruction count as "interesting".
 
-use candid::{Encode, Principal};
+use candid::Principal;
 use canfuzz::define_fuzzer_state;
 use canfuzz::fuzzer::{CanisterBuilder, FuzzerBuilder};
 use canfuzz::instrumentation::{InstrumentationArgs, Seed, instrument_wasm_for_fuzzing};
@@ -82,7 +82,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
             self.get_coverage_canister_id(),
             Principal::anonymous(),
             "decode",
-            Encode!(&bytes).unwrap(),
+            bytes
         );
 
         let status = parse_canister_result_for_trap(result);
@@ -101,7 +101,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
     fn instruction_config() -> canfuzz::orchestrator::InstructionConfig {
         canfuzz::orchestrator::InstructionConfig {
             enabled: true,
-            max_instruction_count: Some(10_000_000),
+            max_instruction_count: Some(1_000_000_000),
         }
     }
 }

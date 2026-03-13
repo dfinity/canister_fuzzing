@@ -25,6 +25,32 @@ use std::io::{Read, Write as IoWrite};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Diagnostic information about the current fuzzing session.
+/// Stored in a global [`OnceLock`] so that panic hooks and Ctrl+C handlers can print
+/// a summary before the process exits.
+struct SessionInfo {
+    name: String,
+    corpus_dir: PathBuf,
+    input_dir: PathBuf,
+    crashes_dir: PathBuf,
+    rng_seed: u64,
+}
+
+static SESSION_INFO: std::sync::OnceLock<SessionInfo> = std::sync::OnceLock::new();
+
+/// Print a diagnostic summary of the current fuzzing session to stderr.
+fn print_session_info() {
+    if let Some(info) = SESSION_INFO.get() {
+        eprintln!("\n### Fuzzer session summary ###");
+        eprintln!("  Fuzzer:       {}", info.name);
+        eprintln!("  Seed corpus:  {}", info.corpus_dir.display());
+        eprintln!("  Input dir:    {}", info.input_dir.display());
+        eprintln!("  Crashes dir:  {}", info.crashes_dir.display());
+        eprintln!("  RNG seed:     {}", info.rng_seed);
+        eprintln!("#############################");
+    }
+}
+
 use crate::custom::feedback::oom_exit_kind::OomLogic;
 use crate::custom::mutator::candid::{CandidParserMutator, CandidTypeDefArgs};
 use crate::libafl::{
@@ -448,10 +474,40 @@ macro_rules! run_fuzzing_loop {
             .build()
             .unwrap();
 
+        let rng_seed = current_nanos();
+        let input_dir = $self.input_dir();
+        let crashes_dir = $self.crashes_dir();
+        let corpus_dir = $self.corpus_dir();
+
+        // Store session info for diagnostic output on exit.
+        let _ = SESSION_INFO.set(SessionInfo {
+            name: $self.as_ref().name().to_string(),
+            corpus_dir: corpus_dir.clone(),
+            input_dir: input_dir.clone(),
+            crashes_dir: crashes_dir.clone(),
+            rng_seed,
+        });
+
+        // Print session info at startup so the user can see artifact paths.
+        print_session_info();
+
+        // Install a panic hook that prints session info before the default handler.
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            print_session_info();
+            default_hook(info);
+        }));
+
+        // Install a Ctrl+C handler that prints session info before exiting.
+        let _ = ctrlc::set_handler(move || {
+            print_session_info();
+            std::process::exit(130);
+        });
+
         let mut state = StdState::new(
-            StdRand::with_seed(current_nanos()),
-            CachedOnDiskCorpus::new($self.input_dir(), 512).unwrap(),
-            CachedOnDiskCorpus::new($self.crashes_dir(), 512).unwrap(),
+            StdRand::with_seed(rng_seed),
+            CachedOnDiskCorpus::new(input_dir, 512).unwrap(),
+            CachedOnDiskCorpus::new(crashes_dir, 512).unwrap(),
             &mut feedback,
             &mut objective,
         )
@@ -476,7 +532,7 @@ macro_rules! run_fuzzing_loop {
                 .expect("Failed to create the Executor");
 
         // Load initial inputs from the corpus directory
-        let paths = fs::read_dir($self.corpus_dir()).unwrap();
+        let paths = fs::read_dir(corpus_dir).unwrap();
         for path in paths {
             let p = path.unwrap().path();
             let mut f = File::open(p.clone()).unwrap();
