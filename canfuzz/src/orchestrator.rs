@@ -25,6 +25,32 @@ use std::io::{Read, Write as IoWrite};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Diagnostic information about the current fuzzing session.
+/// Stored in a global [`OnceLock`] so that panic hooks and Ctrl+C handlers can print
+/// a summary before the process exits.
+struct SessionInfo {
+    name: String,
+    corpus_dir: PathBuf,
+    input_dir: PathBuf,
+    crashes_dir: PathBuf,
+    rng_seed: u64,
+}
+
+static SESSION_INFO: std::sync::OnceLock<SessionInfo> = std::sync::OnceLock::new();
+
+/// Print a diagnostic summary of the current fuzzing session to stderr.
+fn print_session_info() {
+    if let Some(info) = SESSION_INFO.get() {
+        eprintln!("\n### Fuzzer session summary ###");
+        eprintln!("  Fuzzer:       {}", info.name);
+        eprintln!("  Seed corpus:  {}", info.corpus_dir.display());
+        eprintln!("  Input dir:    {}", info.input_dir.display());
+        eprintln!("  Crashes dir:  {}", info.crashes_dir.display());
+        eprintln!("  RNG seed:     {}", info.rng_seed);
+        eprintln!("#############################");
+    }
+}
+
 use crate::custom::feedback::oom_exit_kind::OomLogic;
 use crate::custom::mutator::candid::{CandidParserMutator, CandidTypeDefArgs};
 use crate::libafl::{
@@ -315,41 +341,91 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
         // AflMapFeedback must be created before the observer is moved into a tuple.
         let afl_map_feedback = AflMapFeedback::new(&hitcount_map_observer);
 
-        // The observer/feedback types differ at compile time depending on whether
-        // instruction maximization is enabled, so we branch into the macro here.
-        if inst_config.enabled {
-            use crate::custom::feedback::instruction_count::InstructionCountFeedback;
-            use crate::custom::observer::instruction_count::INSTRUCTION_COUNT_OBSERVER_NAME;
-            use crate::libafl::observers::RefCellValueObserver;
-            use crate::libafl_bolts::ownedref::OwnedRef;
-            use std::ptr::addr_of;
+        let candid_enabled = Self::get_candid_args().is_some();
 
-            let instruction_count_observer = unsafe {
-                RefCellValueObserver::new(
-                    INSTRUCTION_COUNT_OBSERVER_NAME,
-                    OwnedRef::from_ptr(addr_of!(INSTRUCTION_MAP)),
-                )
-            };
+        // The observer/feedback/stage types differ at compile time depending on
+        // configuration, so we branch into different macro invocations here.
+        // Each combination of (instruction count, candid mutator) needs its own
+        // call because `tuple_list!` is a compile-time construct.
+        match (inst_config.enabled, candid_enabled) {
+            (true, true) => {
+                use crate::custom::feedback::instruction_count::InstructionCountFeedback;
+                use crate::custom::observer::instruction_count::INSTRUCTION_COUNT_OBSERVER_NAME;
+                use crate::libafl::observers::RefCellValueObserver;
+                use crate::libafl_bolts::ownedref::OwnedRef;
+                use std::ptr::addr_of;
 
-            let feedback = feedback_or!(afl_map_feedback.clone(), InstructionCountFeedback::new());
-            run_fuzzing_loop!(
-                self,
-                &mut harness,
-                hitcount_map_observer,
-                (instruction_count_observer),
-                afl_map_feedback,
-                feedback
-            );
-        } else {
-            let feedback = afl_map_feedback.clone();
-            run_fuzzing_loop!(
-                self,
-                &mut harness,
-                hitcount_map_observer,
-                (),
-                afl_map_feedback,
-                feedback
-            );
+                let instruction_count_observer = unsafe {
+                    RefCellValueObserver::new(
+                        INSTRUCTION_COUNT_OBSERVER_NAME,
+                        OwnedRef::from_ptr(addr_of!(INSTRUCTION_MAP)),
+                    )
+                };
+                let candid_mutator = CandidParserMutator::new(Self::get_candid_args());
+
+                let feedback =
+                    feedback_or!(afl_map_feedback.clone(), InstructionCountFeedback::new());
+                run_fuzzing_loop!(
+                    self,
+                    &mut harness,
+                    hitcount_map_observer,
+                    (instruction_count_observer),
+                    (StdPowerMutationalStage::new(candid_mutator)),
+                    afl_map_feedback,
+                    feedback
+                );
+            }
+            (true, false) => {
+                use crate::custom::feedback::instruction_count::InstructionCountFeedback;
+                use crate::custom::observer::instruction_count::INSTRUCTION_COUNT_OBSERVER_NAME;
+                use crate::libafl::observers::RefCellValueObserver;
+                use crate::libafl_bolts::ownedref::OwnedRef;
+                use std::ptr::addr_of;
+
+                let instruction_count_observer = unsafe {
+                    RefCellValueObserver::new(
+                        INSTRUCTION_COUNT_OBSERVER_NAME,
+                        OwnedRef::from_ptr(addr_of!(INSTRUCTION_MAP)),
+                    )
+                };
+
+                let feedback =
+                    feedback_or!(afl_map_feedback.clone(), InstructionCountFeedback::new());
+                run_fuzzing_loop!(
+                    self,
+                    &mut harness,
+                    hitcount_map_observer,
+                    (instruction_count_observer),
+                    (),
+                    afl_map_feedback,
+                    feedback
+                );
+            }
+            (false, true) => {
+                let candid_mutator = CandidParserMutator::new(Self::get_candid_args());
+                let feedback = afl_map_feedback.clone();
+                run_fuzzing_loop!(
+                    self,
+                    &mut harness,
+                    hitcount_map_observer,
+                    (),
+                    (StdPowerMutationalStage::new(candid_mutator)),
+                    afl_map_feedback,
+                    feedback
+                );
+            }
+            (false, false) => {
+                let feedback = afl_map_feedback.clone();
+                run_fuzzing_loop!(
+                    self,
+                    &mut harness,
+                    hitcount_map_observer,
+                    (),
+                    (),
+                    afl_map_feedback,
+                    feedback
+                );
+            }
         }
     }
 
@@ -370,18 +446,19 @@ pub trait FuzzerOrchestrator: AsRef<FuzzerState> + AsMut<FuzzerState> {
     }
 }
 
-/// Macro to avoid duplicating the fuzzing loop for different observer/feedback
-/// type tuples. The observer tuple and feedback composition differ depending on whether
-/// instruction maximization is enabled, but the rest of the loop (state, executor,
-/// corpus loading, stages) is identical.
+/// Macro to avoid duplicating the fuzzing loop for different observer/feedback/stage
+/// type tuples. The observer tuple, feedback composition, and mutation stages differ
+/// depending on configuration (instruction count, Candid mutator), but the rest of
+/// the loop (state, executor, corpus loading) is identical.
 ///
 /// `$map_observer` is the owned hitcount map observer. It is borrowed by the scheduler
 /// constructors, then moved into the observer tuple alongside any `$extra_observers`.
 /// `$afl_map_feedback` must be an already-constructed `AflMapFeedback` (created from
 /// the hitcount observer before the observer is moved into the tuple).
+/// `$extra_stages` are inserted before the havoc mutator stage (e.g. Candid mutator).
 #[macro_export]
 macro_rules! run_fuzzing_loop {
-    ($self:expr, $harness:expr, $map_observer:expr, ($($extra_observer:expr),*), $afl_map_feedback:expr, $feedback:expr) => {{
+    ($self:expr, $harness:expr, $map_observer:expr, ($($extra_observer:expr),*), ($($extra_stage:expr),*), $afl_map_feedback:expr, $feedback:expr) => {{
         let map_observer = $map_observer;
         let afl_map_feedback = $afl_map_feedback;
         let mut feedback = $feedback;
@@ -397,10 +474,40 @@ macro_rules! run_fuzzing_loop {
             .build()
             .unwrap();
 
+        let rng_seed = current_nanos();
+        let input_dir = $self.input_dir();
+        let crashes_dir = $self.crashes_dir();
+        let corpus_dir = $self.corpus_dir();
+
+        // Store session info for diagnostic output on exit.
+        let _ = SESSION_INFO.set(SessionInfo {
+            name: $self.as_ref().name().to_string(),
+            corpus_dir: corpus_dir.clone(),
+            input_dir: input_dir.clone(),
+            crashes_dir: crashes_dir.clone(),
+            rng_seed,
+        });
+
+        // Print session info at startup so the user can see artifact paths.
+        print_session_info();
+
+        // Install a panic hook that prints session info before the default handler.
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            print_session_info();
+            default_hook(info);
+        }));
+
+        // Install a Ctrl+C handler that prints session info before exiting.
+        let _ = ctrlc::set_handler(move || {
+            print_session_info();
+            std::process::exit(130);
+        });
+
         let mut state = StdState::new(
-            StdRand::with_seed(current_nanos()),
-            CachedOnDiskCorpus::new($self.input_dir(), 512).unwrap(),
-            CachedOnDiskCorpus::new($self.crashes_dir(), 512).unwrap(),
+            StdRand::with_seed(rng_seed),
+            CachedOnDiskCorpus::new(input_dir, 512).unwrap(),
+            CachedOnDiskCorpus::new(crashes_dir, 512).unwrap(),
             &mut feedback,
             &mut objective,
         )
@@ -424,30 +531,38 @@ macro_rules! run_fuzzing_loop {
             InProcessExecutor::new($harness, observers, &mut fuzzer, &mut state, &mut mgr)
                 .expect("Failed to create the Executor");
 
-        // Load initial inputs from the corpus directory
-        let paths = fs::read_dir($self.corpus_dir()).unwrap();
-        for path in paths {
-            let p = path.unwrap().path();
-            let mut f = File::open(p.clone()).unwrap();
+        // Load initial inputs from the corpus directory, skipping non-input files.
+        fn is_corpus_entry(name: &str) -> bool {
+            name != "instruction_log.txt" && name != ".gitignore"
+        }
+        let corpus_entries: Vec<_> = fs::read_dir(&corpus_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(is_corpus_entry))
+            .collect();
+        if corpus_entries.is_empty() {
+            use rand::RngCore;
+            let mut rng = rand::rng();
+            let len = (rng.next_u32() % 1024 + 1) as usize;
+            let mut buf = vec![0u8; len];
+            rng.fill_bytes(&mut buf);
+            println!("Corpus was empty — using a randomly generated seed ({len} bytes)");
+            fuzzer.evaluate_input(&mut state, &mut executor, &mut mgr, &BytesInput::new(buf)).unwrap();
+        }
+        for p in &corpus_entries {
+            let mut f = File::open(p).unwrap();
             let mut buffer = Vec::new();
             f.read_to_end(&mut buffer).unwrap();
-            fuzzer
-                .evaluate_input(
-                    &mut state,
-                    &mut executor,
-                    &mut mgr,
-                    &BytesInput::new(buffer),
-                )
-                .unwrap();
+            fuzzer.evaluate_input(&mut state, &mut executor, &mut mgr, &BytesInput::new(buffer)).unwrap();
         }
 
         // Power-aware mutation stages: mutation count per corpus entry is scaled
         // by its score (bitmap size, exec time, rarity) instead of random 1-128.
         let havoc_mutator = HavocScheduledMutator::new(havoc_mutations());
-        let candid_mutator = CandidParserMutator::new(Self::get_candid_args());
         let mut stages = tuple_list!(
             calibration_stage,
-            StdPowerMutationalStage::new(candid_mutator),
+            $($extra_stage,)*
             StdPowerMutationalStage::new(havoc_mutator),
             stats_stage
         );
