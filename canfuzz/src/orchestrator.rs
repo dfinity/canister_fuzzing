@@ -531,10 +531,15 @@ macro_rules! run_fuzzing_loop {
             InProcessExecutor::new($harness, observers, &mut fuzzer, &mut state, &mut mgr)
                 .expect("Failed to create the Executor");
 
-        // Load initial inputs from the corpus directory
+        // Load initial inputs from the corpus directory, skipping non-input files.
         let paths = fs::read_dir(corpus_dir).unwrap();
         for path in paths {
             let p = path.unwrap().path();
+            if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                if name == "instruction_log.txt" || name == ".gitignore" {
+                    continue;
+                }
+            }
             let mut f = File::open(p.clone()).unwrap();
             let mut buffer = Vec::new();
             f.read_to_end(&mut buffer).unwrap();
