@@ -82,7 +82,7 @@ impl FuzzerOrchestrator for DecodeCandidFuzzer {
             self.get_coverage_canister_id(),
             Principal::anonymous(),
             "decode",
-            bytes
+            bytes,
         );
 
         let status = parse_canister_result_for_trap(result);
