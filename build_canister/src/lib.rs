@@ -5,6 +5,7 @@ use std::process::Command;
 #[derive(Debug)]
 pub enum Canister {
     Rust,
+    RustWasi,
     Motoko,
 }
 
@@ -22,6 +23,7 @@ pub fn build_canisters(canisters: Vec<CanisterBuildOpts>) {
     for canister in canisters {
         let wasm_path = match canister.ty {
             Canister::Rust => build_canister(canister.name),
+            Canister::RustWasi => build_rust_wasi_canister(canister.name),
             Canister::Motoko => build_motoko_canister(canister.name),
         };
 
@@ -70,6 +72,71 @@ fn build_canister(name: &str) -> PathBuf {
     }
 
     get_build_dir().join(format!("{name}.wasm"))
+}
+
+/// Builds a Rust canister targeting `wasm32-wasip1` and converts it with `wasi2ic`.
+///
+/// This is required for canisters that depend on libraries needing WASI (e.g. `ic-rusqlite`).
+/// The WASI wasm is built first, then `wasi2ic` rewrites the imports to IC system API calls.
+fn build_rust_wasi_canister(name: &str) -> PathBuf {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
+    let canister_path = workspace_root.join("canisters").join("rust").join(name);
+
+    println!(
+        "cargo:rerun-if-changed={}/src/lib.rs",
+        canister_path.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/src/service.did",
+        canister_path.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/Cargo.toml",
+        canister_path.display()
+    );
+
+    let cargo_bin = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let manifest_path = canister_path.join("Cargo.toml");
+    let status = Command::new(cargo_bin.clone())
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(manifest_path.display().to_string())
+        .arg("--target")
+        .arg("wasm32-wasip1")
+        .arg("--release")
+        .arg("--target-dir")
+        .arg(get_target_dir().display().to_string())
+        .status()
+        .unwrap_or_else(|_| panic!("Failed to execute cargo build for WASI canister '{name}'"));
+
+    if !status.success() {
+        panic!("Failed to build WASI canister '{name}'. Exit status: {status}");
+    }
+
+    let wasi_wasm = get_wasi_build_dir().join(format!("{name}.wasm"));
+    let ic_wasm = get_wasi_build_dir().join(format!("{name}_ic.wasm"));
+
+    let status = Command::new("wasi2ic")
+        .arg(wasi_wasm.display().to_string())
+        .arg(ic_wasm.display().to_string())
+        .status()
+        .unwrap_or_else(|_| {
+            panic!(
+                "Failed to execute wasi2ic for canister '{name}'. \
+                 Is wasi2ic installed? Run: cargo install wasi2ic"
+            )
+        });
+
+    if !status.success() {
+        panic!("wasi2ic failed for canister '{name}'. Exit status: {status}");
+    }
+
+    ic_wasm
+}
+
+fn get_wasi_build_dir() -> PathBuf {
+    get_target_dir().join("wasm32-wasip1/release")
 }
 
 fn get_build_dir() -> PathBuf {

@@ -1,0 +1,31 @@
+[package]
+name = "rusqlite_fuzz"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+default-run = "rusqlite_fuzz"
+
+build = "build.rs"
+
+[[bin]]
+name = "rusqlite_fuzz"
+path = "src/rusqlite_fuzz.rs"
+
+[[bin]]
+name = "generate_corpus"
+path = "src/generate_corpus.rs"
+
+[dependencies]
+candid = { workspace = true }
+canfuzz = { path = "../../canfuzz/" }
+once_cell = { workspace = true }
+pocket-ic = { workspace = true }
+serde = { workspace = true }
+serde_bytes = { workspace = true }
+slog = { workspace = true }
+
+[build-dependencies]
+build_canister = { path = "../../build_canister/" }
+candid_parser = { workspace = true }

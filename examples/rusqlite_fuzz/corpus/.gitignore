@@ -1,0 +1,3 @@
+# Ignore generated corpus files but keep directory tracked
+*
+!.gitignore

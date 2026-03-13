@@ -18,7 +18,7 @@
 //! requiring any changes to the target canister's source code.
 //!
 //! The instruction counting works by:
-//! 1.  Wrapping each `canister_update` / `canister_query` export in a new function that
+//! 1.  Wrapping each `canister_update` export in a new function that
 //!     reads `ic0.performance_counter(1)` after the original method returns.
 //! 2.  Subtracting the estimated overhead of AFL instrumentation (computed from the IC
 //!     instruction cost model and `history_size`) to isolate the canister's own cost.
@@ -53,6 +53,12 @@
 //!   overhead). The IC's actual cost model may differ slightly. For fuzzing guidance (relative
 //!   ordering of inputs), approximate is sufficient.
 //!
+//! - **Query and composite query methods are not wrapped.** The wrapper stores the
+//!   instruction count in a wasm global, which requires state to be committed. Query calls
+//!   execute against a state snapshot and discard all mutations (including global writes),
+//!   so the count would be lost before it can be read back. Only `canister_update` exports
+//!   are instrumented for instruction counting.
+//!
 //! - **`performance_counter(1)` includes inter-canister call instructions.** If the target
 //!   method makes downstream calls, the counter includes instructions executed in callbacks.
 //!   This is generally desirable (total cost of the message), but means the count is not
@@ -85,9 +91,10 @@ pub struct InstrumentationArgs {
     pub history_size: usize,
     /// The seed to use for instrumentation.
     pub seed: Seed,
-    /// Whether to instrument canister_update/canister_query methods to track instruction counts.
+    /// Whether to instrument `canister_update` methods to track instruction counts.
     /// When enabled, wrapper functions are injected that read the IC performance counter
     /// after each method execution and an export function is added to retrieve the count.
+    /// Query methods are not wrapped (see module-level limitations).
     pub instrument_instruction_count: bool,
 }
 
@@ -158,7 +165,7 @@ pub fn instrument_wasm_for_fuzzing(instrumentation_args: InstrumentationArgs) ->
 ///
 /// When [`InstrumentationArgs::instrument_instruction_count`] is enabled, it additionally:
 /// 5. Imports `ic0.performance_counter` and injects instruction-counting globals.
-/// 6. Wraps each `canister_update` / `canister_query` export to read the instruction counter.
+/// 6. Wraps each `canister_update` export to read the instruction counter.
 /// 7. Injects the [`INSTRUCTION_COUNT_FN_EXPORT_NAME`] export to retrieve the count.
 fn instrument_for_afl(
     module: &mut Module<'_>,
@@ -676,7 +683,12 @@ fn compute_cost_per_afl_call(history_size: usize) -> i64 {
 /// ```
 const WRAPPER_OVERHEAD_COST: i64 = 213;
 
-/// Injects wrapper functions around canister_update and canister_query exports.
+/// Injects wrapper functions around `canister_update` exports.
+///
+/// Only update exports are wrapped because the wrapper stores the instruction count
+/// in a wasm global, which requires state to be committed. Query calls (including
+/// composite queries) execute against a state snapshot and discard mutations, so the
+/// stored count would be lost before it can be read.
 ///
 /// Each wrapper resets the AFL call counter, calls the original method, reads the
 /// performance counter, subtracts estimated AFL overhead and its own fixed overhead,
@@ -688,15 +700,14 @@ fn inject_method_wrappers(
     perf_counter_idx: FunctionID,
     cost_per_afl_call: i64,
 ) -> Vec<FunctionID> {
-    // Collect exports to wrap: (export_index, original_function_id, export_name)
+    // Only wrap canister_update exports — see doc comment for why queries are excluded.
     let exports_to_wrap: Vec<(usize, FunctionID)> = module
         .exports
         .iter()
         .enumerate()
         .filter(|(_, exp)| {
             matches!(exp.kind, ExternalKind::Func)
-                && (exp.name.starts_with("canister_update ")
-                    || exp.name.starts_with("canister_query "))
+                && exp.name.starts_with("canister_update ")
                 && !exp.name.contains(COVERAGE_FN_EXPORT_NAME)
                 && !exp.name.contains(INSTRUCTION_COUNT_FN_EXPORT_NAME)
         })

@@ -12,6 +12,11 @@ members = [
     "examples/motoko_shim",
     "examples/stable_memory_ops",
     "examples/trap_after_await",
+    "examples/rusqlite_fuzz",
+]
+
+exclude = [
+    "canisters/rust/rusqlite_db",
 ]
 
 resolver = "2"
@@ -55,6 +60,8 @@ syn = "2.0"
 proc-macro2 = "1.0"
 
 # pinned deps
+ctrlc = "3.4"
 libafl = { version = "=0.15.4", features = ["std"] }
 libafl_bolts = {version = "=0.15.4", features = ["rand_trait"] }
 wirm = { version = "=2.2.0", features = ["parallel"] }
+ic-rusqlite = { version = "0.4", features = ["precompiled"] }

@@ -79,10 +79,14 @@ fn main() {
 1.  **Rust**:
     ```sh
     rustup default stable
-    rustup target add wasm32-unknown-unknown
+    rustup target add wasm32-unknown-unknown wasm32-wasip1
     ```
-2.  **DFX**: [Installation guide](https://internetcomputer.org/docs/current/developer-docs/getting-started/install/index.html) (for Motoko canisters).
-3.  **Mops**: `npm install -g mops` (for Motoko canisters).
+2.  **wasi2ic** (for WASI-based canisters like `rusqlite_db`):
+    ```sh
+    cargo install wasi2ic
+    ```
+3.  **DFX**: [Installation guide](https://internetcomputer.org/docs/current/developer-docs/getting-started/install/index.html) (for Motoko canisters).
+4.  **Mops**: `npm install -g mops` (for Motoko canisters).
 
 
 The `examples/` directory contains sample fuzzers. To run the `stable_memory_ops` example:
@@ -129,7 +133,7 @@ The framework connects three components:
 
    * **Coverage export**: A special method (`__export_coverage_for_afl`) is added to the Wasm module so the fuzzer can retrieve the coverage map after each execution.
 
-   * **Instruction count maximization** *(optional)*: When `instrument_instruction_count: true` is set, wrapper functions are injected around each `canister_update`/`canister_query` export. The wrappers read `ic0.performance_counter` after the original method returns and subtract the estimated AFL instrumentation overhead. A separate export (`__export_instruction_count_for_afl`) lets the fuzzer retrieve the count. Combined with `instruction_config()` returning `InstructionConfig { enabled: true, .. }` in `FuzzerOrchestrator`, this guides the fuzzer toward inputs that consume the most IC instructions — no changes to the target canister's source code required. See the `decode_candid_by_instructions` example.
+   * **Instruction count maximization** *(optional)*: When `instrument_instruction_count: true` is set, wrapper functions are injected around each `canister_update` export. The wrappers read `ic0.performance_counter` after the original method returns and subtract the estimated AFL instrumentation overhead. A separate export (`__export_instruction_count_for_afl`) lets the fuzzer retrieve the count. Combined with `instruction_config()` returning `InstructionConfig { enabled: true, .. }` in `FuzzerOrchestrator`, this guides the fuzzer toward inputs that consume the most IC instructions — no changes to the target canister's source code required. Each new maximum is logged with a timestamp, instruction count, and input hex preview, and the input is saved to the corpus directory for replay. Setting `max_instruction_count` to a threshold will treat inputs that exceed it as crashes. See the `decode_candid_by_instructions` example.
 
 3. **`libafl` (Fuzzing Engine)** — Drives the main loop: generating inputs, executing them via `pocket-ic`, collecting coverage (and optionally instruction count) feedback, and managing the corpus. The framework also includes a **Candid-aware mutator** that can parse `.did` files and perform structure-aware mutations on Candid-encoded inputs.
 
