@@ -62,7 +62,6 @@ impl FuzzerOrchestrator for RusqliteFuzzer {
         let test = PocketIcBuilder::new()
             .with_application_subnet()
             .with_log_level(Level::Critical)
-            .with_auto_progress()
             .build();
         self.as_mut().init_state(test);
         let test = self.get_state_machine();
