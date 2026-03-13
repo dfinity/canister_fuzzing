@@ -532,25 +532,29 @@ macro_rules! run_fuzzing_loop {
                 .expect("Failed to create the Executor");
 
         // Load initial inputs from the corpus directory, skipping non-input files.
-        let paths = fs::read_dir(corpus_dir).unwrap();
-        for path in paths {
-            let p = path.unwrap().path();
-            if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-                if name == "instruction_log.txt" || name == ".gitignore" {
-                    continue;
-                }
-            }
-            let mut f = File::open(p.clone()).unwrap();
+        fn is_corpus_entry(name: &str) -> bool {
+            name != "instruction_log.txt" && name != ".gitignore"
+        }
+        let corpus_entries: Vec<_> = fs::read_dir(&corpus_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(is_corpus_entry))
+            .collect();
+        if corpus_entries.is_empty() {
+            use rand::RngCore;
+            let mut rng = rand::rng();
+            let len = (rng.next_u32() % 1024 + 1) as usize;
+            let mut buf = vec![0u8; len];
+            rng.fill_bytes(&mut buf);
+            println!("Corpus was empty — using a randomly generated seed ({len} bytes)");
+            fuzzer.evaluate_input(&mut state, &mut executor, &mut mgr, &BytesInput::new(buf)).unwrap();
+        }
+        for p in &corpus_entries {
+            let mut f = File::open(p).unwrap();
             let mut buffer = Vec::new();
             f.read_to_end(&mut buffer).unwrap();
-            fuzzer
-                .evaluate_input(
-                    &mut state,
-                    &mut executor,
-                    &mut mgr,
-                    &BytesInput::new(buffer),
-                )
-                .unwrap();
+            fuzzer.evaluate_input(&mut state, &mut executor, &mut mgr, &BytesInput::new(buffer)).unwrap();
         }
 
         // Power-aware mutation stages: mutation count per corpus entry is scaled
