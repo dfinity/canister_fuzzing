@@ -1,4 +1,4 @@
-# TODO: Move this package into the workspace once ic-rusqlite supports ic-cdk 0.19+.
+# TODO: Move this package into the workspace once ic-rusqlite supports ic-cdk 0.20+.
 # Currently excluded because ic-rusqlite transitively depends on ic-cdk 0.18, which
 # conflicts with the workspace's ic-cdk 0.19 via the `links` key on ic-cdk-executor.
 # Versions below mirror the workspace Cargo.toml where possible.
@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 arbitrary = { version = "1.4.1", features = ["derive"] }
-candid = { version = "0.10.19", features = ["all"] }
+candid = { version = "0.10.24", features = ["all"] }
 ic-cdk = "0.18"
 ic-dummy-getrandom-for-wasm = "0.1.0"
 ic-rusqlite = { version = "0.4", features = ["precompiled"] }
