@@ -47,10 +47,15 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features
+        run: cargo clippy --workspace --exclude rusqlite_db --all-targets --all-features
+
+      - name: Run Clippy (rusqlite_db, wasm32-wasip1)
+        run: |
+          rustup target add wasm32-wasip1
+          cargo clippy -p rusqlite_db --target wasm32-wasip1 --all-targets --all-features
 
       - name: Run Tests
-        run: cargo test -- --color always
+        run: cargo test --workspace --exclude rusqlite_db -- --color always
         env:
           RUST_BACKTRACE: 1
 

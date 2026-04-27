@@ -26,16 +26,46 @@ struct ColumnDef {
 
 #[derive(Clone, Debug, Arbitrary, Deserialize, Serialize, CandidType)]
 enum WhereClause {
-    Eq { col: String, val: SqlValue },
-    NotEq { col: String, val: SqlValue },
-    Lt { col: String, val: SqlValue },
-    Gt { col: String, val: SqlValue },
-    IsNull { col: String },
-    Like { col: String, pattern: String },
-    Between { col: String, low: SqlValue, high: SqlValue },
-    InList { col: String, vals: Vec<SqlValue> },
-    And { left: Box<WhereClause>, right: Box<WhereClause> },
-    Or { left: Box<WhereClause>, right: Box<WhereClause> },
+    Eq {
+        col: String,
+        val: SqlValue,
+    },
+    NotEq {
+        col: String,
+        val: SqlValue,
+    },
+    Lt {
+        col: String,
+        val: SqlValue,
+    },
+    Gt {
+        col: String,
+        val: SqlValue,
+    },
+    IsNull {
+        col: String,
+    },
+    Like {
+        col: String,
+        pattern: String,
+    },
+    Between {
+        col: String,
+        low: SqlValue,
+        high: SqlValue,
+    },
+    InList {
+        col: String,
+        vals: Vec<SqlValue>,
+    },
+    And {
+        left: Box<WhereClause>,
+        right: Box<WhereClause>,
+    },
+    Or {
+        left: Box<WhereClause>,
+        right: Box<WhereClause>,
+    },
 }
 
 #[derive(Clone, Debug, Arbitrary, Deserialize, Serialize, CandidType)]
@@ -155,8 +185,17 @@ fn sql_value_to_param(val: &SqlValue) -> String {
             format!("'{}'", s.replace('\'', "''"))
         }
         SqlValue::Blob(b) => {
-            let b = if b.len() > 1024 { &b[..1024] } else { b.as_slice() };
-            format!("X'{}'", b.iter().map(|byte| format!("{byte:02x}")).collect::<String>())
+            let b = if b.len() > 1024 {
+                &b[..1024]
+            } else {
+                b.as_slice()
+            };
+            format!(
+                "X'{}'",
+                b.iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            )
         }
     }
 }
@@ -371,9 +410,9 @@ fn execute_op(conn: &Connection, op: &SqlOperation) {
 
             // Execute and consume results
             if let Ok(mut stmt) = conn.prepare(&sql) {
-                let _ = stmt.query_map([], |_row| Ok(())).map(|rows| {
-                    for _ in rows.take(1000) {}
-                });
+                let _ = stmt
+                    .query_map([], |_row| Ok(()))
+                    .map(|rows| for _ in rows.take(1000) {});
             }
         }
 
@@ -390,11 +429,7 @@ fn execute_op(conn: &Connection, op: &SqlOperation) {
                 .take(32)
                 .map(|a| format!("{} = {}", quote_ident(&a.col), sql_value_to_param(&a.val)))
                 .collect();
-            let mut sql = format!(
-                "UPDATE {} SET {}",
-                quote_ident(table),
-                sets.join(", ")
-            );
+            let mut sql = format!("UPDATE {} SET {}", quote_ident(table), sets.join(", "));
             if let Some(wc) = where_clause {
                 sql.push_str(&format!(" WHERE {}", render_where(wc, 0)));
             }
@@ -424,7 +459,10 @@ fn execute_op(conn: &Connection, op: &SqlOperation) {
             let idx_name = format!(
                 "idx_{}_{}",
                 table.chars().take(32).collect::<String>(),
-                columns.first().map(|c| c.chars().take(16).collect::<String>()).unwrap_or_default()
+                columns
+                    .first()
+                    .map(|c| c.chars().take(16).collect::<String>())
+                    .unwrap_or_default()
             );
             let unique_kw = if *unique { "UNIQUE " } else { "" };
             let sql = format!(
