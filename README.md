@@ -2,6 +2,10 @@
 
 A coverage-guided fuzzer for Internet Computer canisters, built on `libafl` and `pocket-ic`. It finds bugs by instrumenting canister Wasm, emulating the IC with `pocket-ic`, and using `libafl` to explore code paths.
 
+## Current Status: Unmaintained
+
+While completely functional and usable, this canister fuzzing framework is currently unmaintained. 
+
 ## Building a new fuzzer
 
 To build a fuzzer, one must implement the `FuzzerOrchestrator` trait. This involves two main parts: an `init` function to set up the canisters and an `execute` function that runs for each input.
